@@ -1,0 +1,40 @@
+{
+  "screen_on": true,
+  "brightness": 100,
+  "display_type": "video",
+  "photo_path": null,
+  "video_path": "assets/videos/20260929_213817_assetbfc832.mp4",
+  "fit_mode": "contain",
+  "photo_fps": 1.0,
+  "video_quality": "high",
+  "rotation": 270,
+  "playback_mode": "single",
+  "auto_start": false,
+  "power_actions": true,
+  "power_close_app": true,
+  "power_shutdown": true,
+  "power_logout": true,
+  "power_sleep": true,
+  "overlay_type": "none",
+  "clock_style": "text",
+  "clock_text": {
+    "x": 0.0,
+    "y": 0.0,
+    "alpha": 0.6,
+    "scale": 0.6,
+    "thick": 1,
+    "color": [
+      255,
+      255,
+      255
+    ],
+    "bg": [
+      0,
+      0,
+      0
+    ]
+  },
+  "custom_texts": [],
+  "smtc_filter_mode": "all",
+  "smtc_filter_apps": []
+}
