@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!--
   ScreenControl.App — WinUI 3 应用（非打包，C++/WinRT）
 
@@ -137,6 +137,15 @@
     </ClCompile>
     <ClCompile Include="AppClass.cpp" />
     <ClCompile Include="MainWindow.cpp" />
+    <!-- MIDL 生成的运行时类工厂注册（C++/WinRT 按 MainWindow.idl 生成） -->
+    <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- MainWindow 必须是 runtimeclass(Microsoft.UI.Xaml.Window)：
+         否则窗口与运行时类型无关联，Window.Content(...) 会在 XAML 原生层
+         触发访问冲突 0xC0000005。由 Visual Studio 项目系统构建时投影正常生成。 -->
+    <Midl Include="MainWindow.idl" />
   </ItemGroup>
 
   <!-- 依赖下层静态库 -->

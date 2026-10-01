@@ -1,0 +1,16 @@
+﻿namespace ScreenControl
+{
+    // 主窗口运行时类。
+    //
+    // 必须声明为 runtimeclass 且继承 Microsoft.UI.Xaml.Window：
+    // 这样 C++/WinRT 才会生成完整的 composable 投影（MainWindowT）与工厂注册，
+    // 窗口也才与运行时类型正确关联。
+    //
+    // 直接 new 一个普通 C++ 类再 set Window.Content(...)，会在 XAML 原生层触发
+    // 访问冲突（实测 0xC0000005，见 README 已知问题）。
+    [default_interface]
+    runtimeclass MainWindow : Microsoft.UI.Xaml.Window
+    {
+        MainWindow();
+    }
+}

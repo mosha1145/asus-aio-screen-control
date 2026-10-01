@@ -23,8 +23,9 @@ namespace ScreenControl
         std::wstring const& ConfigSummary() const noexcept { return m_configSummary; }
 
     private:
-        // MainWindow 是本工程的普通 C++ 类（非 MIDL runtimeclass），用智能指针持有。
-        std::unique_ptr<ScreenControl::MainWindow> m_mainWindow;
+        // 窗口是 MIDL 声明的 runtimeclass，持有其投影类型。
+        // 在 OnLaunched 里创建：那时 UI 线程与 DispatcherQueue 已就绪。
+        winrt::ScreenControl::MainWindow m_mainWindow{ nullptr };
         std::wstring m_configSummary;
 
         static App* s_current;

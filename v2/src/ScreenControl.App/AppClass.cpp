@@ -84,10 +84,10 @@ namespace ScreenControl
             LogStep("[App] config loaded");
 
             // 窗口必须在这里创建：此时 WinUI 的 UI 线程与 DispatcherQueue 已就绪。
-            m_mainWindow = std::make_unique<ScreenControl::MainWindow>();
+            m_mainWindow = winrt::make<ScreenControl::MainWindow>();
             LogStep("[App] MainWindow constructed");
 
-            m_mainWindow->Window().Activate();
+            m_mainWindow.Activate();
             LogStep("[App] MainWindow activated");
 
             ApplyTheme(store.Data().appTheme);
@@ -113,7 +113,7 @@ namespace ScreenControl
         {
             return;
         }
-        auto element = m_mainWindow->Window().Content().try_as<FrameworkElement>();
+        auto element = m_mainWindow.Content().try_as<FrameworkElement>();
         if (element == nullptr)
         {
             return;

@@ -38,21 +38,40 @@ v2\
 | Windows SDK | 10.0.26100 |
 | Windows App SDK | 1.8.250916003（NuGet） |
 | Microsoft.Windows.CppWinRT | 2.0.240111.5（NuGet） |
-| Windows App Runtime | 1.8（系统已安装，非打包模式运行时需要） |
+| Windows App Runtime | 1.8（自包含模式下随程序部署） |
 
-命令行构建：
+### 各工程的可构建性（重要）
+
+| 工程 | 命令行 MSBuild | Visual Studio 2022 |
+|---|---|---|
+| `ScreenControl.Device` | ✅ 通过 | ✅ |
+| `ScreenControl.Imaging` | ✅ 通过 | ✅ |
+| `ScreenControl.Core` | ✅ 通过 | ✅ |
+| `ScreenControl.App` | ❌ 不可用（见下） | ✅ 正常 |
+
+**界面层（`ScreenControl.App`）请用 Visual Studio 2022 打开
+`AsusAioScreenControl.sln`，选 Debug x64 生成。**
+`MainWindow` 是 MIDL 声明的 `runtimeclass : Microsoft.UI.Xaml.Window`，
+需要 C++/WinRT 的 composable 投影（`MainWindowT`）。该投影在命令行 MSBuild 下
+不生成（与已知问题第 3 条 WMC1007 同源），所以命令行构建该工程会报
+`MainWindowT 后面缺少参数列表`；VS 的项目系统会正确生成投影与 XAML 代码。
+
+静态库层不依赖代码生成，命令行可独立验证：
 
 ```powershell
 $msbuild = 'D:\Dev\VS2022\MSBuild\Current\Bin\MSBuild.exe'
-$sln     = 'D:\asus-aio-screen-control\v2\AsusAioScreenControl.sln'
+$v2      = 'D:\asus-aio-screen-control\v2'
 
-# 首次需要还原 NuGet 包
-& $msbuild $sln /restore /p:Configuration=Debug /p:Platform=x64
+# 还原 NuGet 包（首次）
+& $msbuild "$v2\AsusAioScreenControl.sln" /restore /p:Configuration=Debug /p:Platform=x64
+
+# 单独验证静态库
+foreach ($p in 'ScreenControl.Device','ScreenControl.Imaging','ScreenControl.Core') {
+  & $msbuild "$v2\src\$p\$p.vcxproj" /p:Configuration=Debug /p:Platform=x64
+}
 ```
 
 输出统一落在 `v2\out\<Platform>\<Configuration>\`。
-
-或用 Visual Studio 打开 `AsusAioScreenControl.sln`，选 **Debug x64** 直接生成。
 
 ---
 
@@ -136,45 +155,35 @@ Debug x64 输出目录约 159 MB / 137 个文件，含 `Microsoft.UI.Xaml.dll`�
    需要彻底消除可设 `IgnoreWarnCompileDuplicatedFilename=true`（当前未设，
    以便真实的重名冲突仍能被发现）。
 
-2. **运行时启动崩溃：`Window.Content(...)` 触发访问冲突（`0xC0000005`）。**
-   已用逐行日志把范围缩到最小可复现：
+2. **命令行构建界面层时 `MainWindowT` 不可用 —— 用 Visual Studio 构建即可。**
+   现象（命令行 MSBuild 构建 `ScreenControl.App`）：
+   `error C7568: 假定的函数模板"MainWindowT"后面缺少参数列表`。
+
+   根因：`MainWindow` 声明为 MIDL 的
+   `runtimeclass MainWindow : Microsoft.UI.Xaml.Window`，需要 C++/WinRT 的
+   composable 投影（`MainWindowT`）。命令行下生成的 `ScreenControl` 投影里
+   该类型是空的（`WINRT_EXPORT namespace winrt::ScreenControl { }`），
+   与第 3 条 WMC1007 同源 —— 命令行 MSBuild 缺少 VS 项目系统注入的状态。
+
+   **界面层请用 Visual Studio 2022 打开 `AsusAioScreenControl.sln` 构建。**
+   VS 会正确生成投影与 XAML 代码。
+
+   历史背景（此前的启动崩溃定位，供参考）：曾用「普通 C++ 类 + `Window` 成员」
+   的方式建窗口，启动时在 `Window.Content(root)` 处发生 `0xC0000005` 访问冲突
+   （事件日志确认，且不可被 `catch (hresult_error)` 捕获）。逐行日志定位到该行：
 
    ```
-   [App] OnLaunched entered          <- Application::Start 回调已进入，OnLaunched 正常触发
-   [App] config loaded
-   [MainWindow] ctor enter
-   [MainWindow] Window() ok          <- Window 创建成功
-   [MainWindow] Grid() ok
-   [MainWindow] TextBlock props ok
-   [MainWindow] Children().Append ok
-   （到此为止，进程消失）
+   [App] OnLaunched entered / config loaded
+   [MainWindow] ctor enter / Window() ok / Grid() ok / TextBlock props ok / Children().Append ok
+   （之后进程消失）
    ```
 
-   崩溃点在 `m_window.Content(root)`，事件日志确认为
-   `AsusAioScreenControl.exe` 自身模块内 `0xc0000005`（访问冲突），
-   且**不可被 `catch (hresult_error)` 捕获**（是原生层访问冲突，不是可传播的 HRESULT）。
-
-   已排除（不是这些原因）：
-   * `Application::Start` 未调用 —— 已调用，`OnLaunched` 确认触发；
-   * 消息循环 / `DispatcherQueueController` 缺失 —— WinUI 3 由
-     `Application::Start` 内部建立并驱动消息泵，不需要手工建；
-   * `init_apartment` 冲突 —— 已移除手工调用；
-   * 窗口未 Activate —— 崩溃发生在 `Activate()` 之前；
-   * 施工顺序 —— 曾把 `Window()` 提到最前，仍崩在同一句；
-   * 主题资源缺失 —— `Application::Current().Resources().Lookup(...)`
-     已换成 `TryLookup`（不再抛异常），崩溃点未变。
-
-   当前判断：**`Window` 缺少与该运行时类型的关联**。本工程用「普通 C++ 类 +
-   `Window` 成员」的方式建窗口，没有把窗口声明为 MIDL runtimeclass。
-   尝试补回 `runtimeclass MainWindow : Microsoft.UI.Xaml.Window` 时，
-   C++/WinRT 生成的 `ScreenControl` 投影里 `MainWindow` 是**空的**
-   （`WINRT_EXPORT namespace winrt::ScreenControl { }`），
-   拿不到 `MainWindowT`，因此无法编译。
-
-   **结论：这条路的根因在上游 —— 命令行 MSBuild 下 WinUI 3 的 C++ 投影/代码生成
-   不完整（与下面第 3 条 WMC1007 同源）。规范解法是用 Visual Studio 打开
-   `AsusAioScreenControl.sln`、用官方「WinUI 3 桌面应用 (原生)」模板生成工程后开发
-   XAML 界面；命令行构建仅适合验证静态库层（Device / Imaging / Core 均已通过）。**
+   已排除：`Application::Start` 未调用（`OnLaunched` 确认触发）、消息循环缺失
+   （WinUI 3 由 `Application::Start` 内部驱动消息泵，无需手工建
+   `DispatcherQueueController`）、`init_apartment` 冲突（已移除）、
+   窗口未 Activate（崩溃在 `Activate()` 之前）、施工顺序、主题资源缺失
+   （已改用 `TryLookup`）。
+   结论：窗口必须与运行时类型关联，即必须走 MIDL runtimeclass —— 也就是当前代码。
 
 3. **WinUI 3 的 C++ XAML 代码生成在命令行 MSBuild 下不产出。**
    标记编译 pass 1 执行，pass 2 报
@@ -202,9 +211,10 @@ Debug x64 输出目录约 159 MB / 137 个文件，含 `Microsoft.UI.Xaml.dll`�
 | `Imaging/RenderParams` | 不可变渲染参数快照，替代 v1「6 个 getter 回调逐帧读 UI」的做法。 |
 | `Core/MinimalJson` | 零依赖只读 JSON 解析器（配置迁移与加载用，不引入第三方库）。 |
 | `Core/AppConfig` | v1 全部配置键、默认值沿用 v1、合并式加载（缺键补默认 / 未知键忽略）、**原子写**、**v1→v2 一次性迁移**（含素材路径相对→绝对重定位）。 |
-| `App/MainWindow` | NavigationView + Frame 导航（主控 / 设置）、**Mica 系统背衬**、**内容扩展到标题栏 + 自定义拖动区**、主题应用。 |
-| `App/DisplayPage` | 主控页骨架：预览占位 + 屏幕开关 + 亮度 + 适配/旋转。 |
-| `App/SettingsPage` | 应用内设置页骨架（常规 / 画面与播放 / 暂缓功能灰显 / 配置现状回显）。 |
+| `App/MainWindow` | **完整界面实现**（纯 C++/WinRT 构建）：NavigationView + Frame 导航（主控 / 设置）、**Mica 系统背衬**、**内容扩展到标题栏 + 自定义拖动区**、深浅色跟随系统。以 MIDL `runtimeclass MainWindow : Microsoft.UI.Xaml.Window` 声明。 |
+| `App/MainWindow` 主控页 | 预览占位（1:1 320×320）+ 屏幕开关 + 亮度滑杆 + 图像适应 / 画面旋转，以及骨架阶段提示。 |
+| `App/MainWindow` 设置页 | 常规（开机自启 / 主题三选）/ 画面与播放（适应、质量档、照片帧率）/ 暂缓功能灰显占位 / 配置现状回显。 |
+| `App/AppClass` | `ApplicationT<App>` 纯 C++ App；含启动步骤日志（写 exe 同目录 `.log`）与 `hresult_error` 上报，避免静默退出。 |
 
 ### 未实现（后续迭代）
 
