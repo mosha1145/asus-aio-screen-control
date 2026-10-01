@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v2 共享构建目标
+  =====================================================================
+  必须放在 Directory.Build.targets（而不是 .props）里：
+  Directory.Build.props 在 NuGet 的 *.nuget.g.props 之前求值，那时
+  NuGetPackageRoot 还是空的，拼出来的 WinMD 路径会变成 "\microsoft.windowsappsdk..."
+  这种没有盘符的路径，Reference 静默失效。
+  Directory.Build.targets 在全部导入之后求值，此时路径才正确（已实测）。
+  =====================================================================
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <WasdkPkgRoot Condition="'$(NuGetPackageRoot)' != ''">$(NuGetPackageRoot)\</WasdkPkgRoot>
+  </PropertyGroup>
+
+  <!--
+    WinUI / Windows App SDK 的 WinMD 元数据。
+    MIDL（编译 .idl）与 cppwinrt（生成投影头）都需要它们，缺一个就会报
+    "unresolved type declaration" 或 "Type '...' could not be found"。
+  -->
+  <ItemGroup Condition="'$(WasdkPkgRoot)' != '' And ('$(UseWinUI)' == 'true' Or '$(ConsumeWindowsAppSdk)' == 'true')">
+    <Reference Include="$(WasdkPkgRoot)microsoft.windowsappsdk.winui\1.8.250906003\metadata\*.winmd" />
+    <Reference Include="$(WasdkPkgRoot)microsoft.windowsappsdk.foundation\1.8.250906002\metadata\*.winmd" />
+    <Reference Include="$(WasdkPkgRoot)microsoft.windowsappsdk.interactiveexperiences\1.8.250906004\metadata\10.0.18362.0\*.winmd" />
+    <!-- Microsoft.UI.Xaml.winmd 引用了 WebView2 的类型，投影生成需要它。 -->
+    <Reference Include="$(WasdkPkgRoot)microsoft.web.webview2\1.0.3179.45\lib\Microsoft.Web.WebView2.Core.winmd"
+               Condition="Exists('$(WasdkPkgRoot)microsoft.web.webview2\1.0.3179.45\lib\Microsoft.Web.WebView2.Core.winmd')" />
+  </ItemGroup>
+
+  <!--
+    喂给 WinUI XAML 编译器 WinRT 元数据。
+    不这样做会报：
+        XamlCompiler error WMC1007: Cannot resolve metadata for WinUI types.
+        Please ensure that Nuget Restore was successful.
+    原因：CompileXaml 的 ReferenceAssemblies 取自 @(ReferencePath)，而 C++ 工程下
+    WinRT 的 .winmd 不会自动进入 ReferencePath（只有平台 winmd 会）。
+    上面那些 <Reference> 项对 MIDL 与 cppwinrt 有效，但 XAML 编译器看不到。
+  -->
+  <Target Name="V2FeedXamlCompilerWinRTMetadata"
+          BeforeTargets="MarkupCompilePass1;MarkupCompilePass2"
+          DependsOnTargets="ResolveReferences">
+    <ItemGroup Condition="'$(WasdkPkgRoot)' != ''">
+      <ReferencePath Include="$(WasdkPkgRoot)microsoft.windowsappsdk.winui\1.8.250906003\metadata\*.winmd" />
+      <ReferencePath Include="$(WasdkPkgRoot)microsoft.windowsappsdk.foundation\1.8.250906002\metadata\*.winmd" />
+      <ReferencePath Include="$(WasdkPkgRoot)microsoft.windowsappsdk.interactiveexperiences\1.8.250906004\metadata\10.0.18362.0\*.winmd" />
+      <ReferencePath Include="$(WasdkPkgRoot)microsoft.web.webview2\1.0.3179.45\lib\Microsoft.Web.WebView2.Core.winmd"
+                     Condition="Exists('$(WasdkPkgRoot)microsoft.web.webview2\1.0.3179.45\lib\Microsoft.Web.WebView2.Core.winmd')" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    去重 ClCompile：修 MSB8027。
+    WindowsAppSDK 1.8 同时通过 build\native 与 buildTransitive\native 两条路径
+    把同一个 WindowsAppRuntimeAutoInitializer.cpp 加进 ClCompile，MSBuild 按
+    「同目录同名输出」判定为重复项（warning MSB8027）。两者其实是同一份文件，
+    去重即可，不影响功能。
+  -->
+  <Target Name="V2DeduplicateGeneratedClCompile" BeforeTargets="ClCompile">
+    <ItemGroup>
+      <_V2ClCompileDedup Include="@(ClCompile)" />
+      <ClCompile Remove="@(ClCompile)" />
+      <ClCompile Include="@(_V2ClCompileDedup->Distinct())" />
+      <_V2ClCompileDedup Remove="@(_V2ClCompileDedup)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

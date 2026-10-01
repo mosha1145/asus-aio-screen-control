@@ -1,0 +1,57 @@
+# v2 — Visual Studio 构建产物
+
+# 构建输出（本解决方案统一使用 out/ 作为输出目录）
+out/
+x64/
+ARM64/
+Win32/
+
+# VS 中间目录与生成文件
+Debug/
+Release/
+Generated Files/
+*.tlog
+*.log
+*.idb
+*.pdb
+*.ilk
+*.exp
+*.iobj
+*.ipdb
+*.pgc
+*.pgd
+
+# VS 用户/本地设置
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.aps
+*.vcxproj.user
+.vs/
+
+# 预编译头 / 对象文件
+*.obj
+*.pch
+*.gch
+
+# NuGet 还原产物
+packages/
+obj/
+**/project.assets.json
+**/project.nuget.cache
+**/*.nuget.g.props
+**/*.nuget.g.targets
+**/*.nuget.dgspec.json
+
+# MSIX 打包中间产物
+AppPackages/
+BundleArtifacts/
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+*.appxupload
+*.msixupload
+AppxManifest.xml
+Package.appxmanifest.bak

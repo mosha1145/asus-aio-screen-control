@@ -1,0 +1,51 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37614.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3F1A2B44-5C6D-4E7F-8A90-1B2C3D4E5F60}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ScreenControl.Device", "src\ScreenControl.Device\ScreenControl.Device.vcxproj", "{6E2A4C11-0D31-4F52-9B7A-1C0D2E3F4A51}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ScreenControl.Imaging", "src\ScreenControl.Imaging\ScreenControl.Imaging.vcxproj", "{7F3B5D22-1E42-4A63-AC8B-2D1E3F4A5B62}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ScreenControl.Core", "src\ScreenControl.Core\ScreenControl.Core.vcxproj", "{8A4C6E33-2F53-4B74-BD9C-3E2F4A5B6C73}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ScreenControl.App", "src\ScreenControl.App\ScreenControl.App.vcxproj", "{9B5D7F44-3A64-4C85-CEAD-4F3A5B6C7D84}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6E2A4C11-0D31-4F52-9B7A-1C0D2E3F4A51}.Debug|x64.ActiveCfg = Debug|x64
+		{6E2A4C11-0D31-4F52-9B7A-1C0D2E3F4A51}.Debug|x64.Build.0 = Debug|x64
+		{6E2A4C11-0D31-4F52-9B7A-1C0D2E3F4A51}.Release|x64.ActiveCfg = Release|x64
+		{6E2A4C11-0D31-4F52-9B7A-1C0D2E3F4A51}.Release|x64.Build.0 = Release|x64
+		{7F3B5D22-1E42-4A63-AC8B-2D1E3F4A5B62}.Debug|x64.ActiveCfg = Debug|x64
+		{7F3B5D22-1E42-4A63-AC8B-2D1E3F4A5B62}.Debug|x64.Build.0 = Debug|x64
+		{7F3B5D22-1E42-4A63-AC8B-2D1E3F4A5B62}.Release|x64.ActiveCfg = Release|x64
+		{7F3B5D22-1E42-4A63-AC8B-2D1E3F4A5B62}.Release|x64.Build.0 = Release|x64
+		{8A4C6E33-2F53-4B74-BD9C-3E2F4A5B6C73}.Debug|x64.ActiveCfg = Debug|x64
+		{8A4C6E33-2F53-4B74-BD9C-3E2F4A5B6C73}.Debug|x64.Build.0 = Debug|x64
+		{8A4C6E33-2F53-4B74-BD9C-3E2F4A5B6C73}.Release|x64.ActiveCfg = Release|x64
+		{8A4C6E33-2F53-4B74-BD9C-3E2F4A5B6C73}.Release|x64.Build.0 = Release|x64
+		{9B5D7F44-3A64-4C85-CEAD-4F3A5B6C7D84}.Debug|x64.ActiveCfg = Debug|x64
+		{9B5D7F44-3A64-4C85-CEAD-4F3A5B6C7D84}.Debug|x64.Build.0 = Debug|x64
+		{9B5D7F44-3A64-4C85-CEAD-4F3A5B6C7D84}.Release|x64.ActiveCfg = Release|x64
+		{9B5D7F44-3A64-4C85-CEAD-4F3A5B6C7D84}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{6E2A4C11-0D31-4F52-9B7A-1C0D2E3F4A51} = {3F1A2B44-5C6D-4E7F-8A90-1B2C3D4E5F60}
+		{7F3B5D22-1E42-4A63-AC8B-2D1E3F4A5B62} = {3F1A2B44-5C6D-4E7F-8A90-1B2C3D4E5F60}
+		{8A4C6E33-2F53-4B74-BD9C-3E2F4A5B6C73} = {3F1A2B44-5C6D-4E7F-8A90-1B2C3D4E5F60}
+		{9B5D7F44-3A64-4C85-CEAD-4F3A5B6C7D84} = {3F1A2B44-5C6D-4E7F-8A90-1B2C3D4E5F60}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D}
+	EndGlobalSection
+EndGlobal

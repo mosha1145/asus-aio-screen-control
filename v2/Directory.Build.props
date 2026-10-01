@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v2 共享构建属性
+  =====================================================================
+  这个文件是整个 v2 解决方案能够用「命令行 MSBuild」干净构建的关键。
+
+  背景（已实测记录，勿随意改动）：
+  WinUI 3 的 C++ 工程模板（VS 内置的 WinUI.Desktop.CppWinRT.*）依赖
+  Visual Studio 项目向导注入的额外状态，直接用命令行 MSBuild 构建模板原始
+  .vcxproj 会失败，报：
+
+      Your project does not reference "UAP,Version=v10.0" framework.
+
+  原因：模板设置 <ApplicationType>Windows Store</ApplicationType>，使
+  Microsoft.NuGet.targets 推断出 TargetPlatformIdentifier=UAP，进而注入
+  _NuGetTargetFallbackMoniker=UAP,Version=v10.0；而 WindowsAppSDK 的 NuGet 包
+  并不提供 UAP 目标，于是两边的框架口径对不上。
+
+  下面这几个属性就是把这个口径对齐成「原生桌面」的修正，已实测可用：
+    TargetPlatformIdentifier / TargetFrameworkIdentifier / TargetFrameworkVersion
+    / TargetFramework  -> native,Version=v0.0
+    WindowsPackageType=None -> 非打包（免 MSIX 部署）
+
+  同时必须提供 WinUI 的 WinMD 元数据引用（MIDL 与 C++/WinRT 的投影生成都
+  需要），见下方 WasdkWinmd 项。
+  =====================================================================
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <!-- 依赖版本（集中管理，升级只改这里） -->
+    <WasdkVersion>1.8.250916003</WasdkVersion>
+    <CppWinRtVersion>2.0.240111.5</CppWinRtVersion>
+
+    <!-- 统一输出目录：v2\out\<Platform>\<Configuration>\ -->
+    <OutDir>$(MSBuildThisFileDirectory)out\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)out\obj\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+
+    <!-- 原生桌面工程口径（见文件头说明） -->
+    <TargetPlatformIdentifier>Windows</TargetPlatformIdentifier>
+    <TargetFrameworkIdentifier>native</TargetFrameworkIdentifier>
+    <TargetFrameworkVersion>v0.0</TargetFrameworkVersion>
+    <TargetFramework>native,Version=v0.0</TargetFramework>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.17763.0</WindowsTargetPlatformMinVersion>
+
+    <!--
+      XAML 项发现：
+      必须让 SDK 用默认项发现（EnableDefaultPageItems=true）来收集 *.xaml。
+      实测：手工声明 <Page .../> 不会触发 WinUI 的 XAML 代码生成，
+      结果是 MainWindow.g.h / *.g.cpp 不生成，编译报 InitializeComponent 找不到。
+      本解决方案没有 App.xaml（App 类用纯 C++），因此关掉 ApplicationDefinition 默认项。
+    -->
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+
+    <!-- C++/WinRT -->
+    <CppWinRTOptimized>true</CppWinRTOptimized>
+    <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
+    <MinimalCoreWin>true</MinimalCoreWin>
+
+    <!-- 统一语言与警告等级 -->
+    <LanguageStandard>stdcpp20</LanguageStandard>
+    <WarningLevel>Level4</WarningLevel>
+  </PropertyGroup>
+
+  <!--
+    WinUI / Windows App SDK 的 WinMD 元数据引用放在 Directory.Build.targets 里。
+    原因：NuGetPackageRoot 是在 NuGet 的 .g.props 里才赋值的，而 .g.props 在
+    Directory.Build.props 之后才导入；在这里求值会得到空路径（已实测踩过）。
+  -->
+
+  <!-- Windows App SDK 的包引用：所有工程都需要 -->
+  <ItemGroup Condition="'$(ConsumeWindowsAppSdk)' == 'true' Or '$(UseWinUI)' == 'true'">
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="$(WasdkVersion)" />
+    <PackageReference Include="Microsoft.Windows.CppWinRT" Version="$(CppWinRtVersion)" />
+  </ItemGroup>
+
+</Project>

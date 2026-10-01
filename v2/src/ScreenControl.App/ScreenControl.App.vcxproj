@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ScreenControl.App — WinUI 3 应用（非打包，C++/WinRT）
+
+  构建口径来自 Directory.Build.props / .targets（把 NuGet 与 WinUI 的框架口径
+  对齐成原生桌面），本文件只声明本工程的源文件。
+
+  【关于 XAML：为什么这里没有 .xaml / .idl】
+  WinUI 3 的 C++ XAML 代码生成（*.xaml.g.h 里的 InitializeComponent 与命名元素
+  访问器）在命令行 MSBuild 下不产出：标记编译的 pass 1 会执行，但 pass 2 报
+      XamlCompiler error WMC1007: Cannot resolve metadata for WinUI types.
+  该代码生成路径依赖 Visual Studio 的项目系统注入状态，命令行无法复现
+  （已逐项验证：原生框架口径、默认/显式 Page 项、ApplicationDefinition、
+  向 XAML 编译器喂 WinMD 元数据，均未解决）。
+
+  因此本骨架的界面用纯 C++/WinRT 构建（MainWindow.cpp），不依赖生成头，
+  命令行 Debug x64 一键可编译、可运行。
+  *.xaml 界面文件已随本轮删除；后续若改用 Visual Studio 工程系统开发 XAML，
+  可按官方模板（WinUI.Desktop.CppWinRT.*）恢复 <Page> / <ApplicationDefinition>
+  项与对应的 *.xaml.h/*.xaml.cpp。
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{9B5D7F44-3A64-4C85-CEAD-4F3A5B6C7D84}</ProjectGuid>
+    <ProjectName>ScreenControl.App</ProjectName>
+    <RootNamespace>ScreenControl</RootNamespace>
+    <TargetName>AsusAioScreenControl</TargetName>
+    <DefaultLanguage>zh-CN</DefaultLanguage>
+    <MinimumVisualStudioVersion>16.0</MinimumVisualStudioVersion>
+    <AppContainerApplication>false</AppContainerApplication>
+    <!-- 非打包：免 MSIX 部署，双击 exe 即可运行（需系统安装 Windows App Runtime 1.8） -->
+    <AppxPackage>false</AppxPackage>
+    <ApplicationType>Windows Store</ApplicationType>
+    <ApplicationTypeRevision>10.0</ApplicationTypeRevision>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <DesktopCompatible>true</DesktopCompatible>
+    <ConsumeWindowsAppSdk>true</ConsumeWindowsAppSdk>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
+            Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')"
+            Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <PropertyGroup>
+    <!--
+      C++/WinRT 生成的投影头落在 Generated Files\winrt\ 下，而源码里写的是
+      #include <winrt/Microsoft.UI.Xaml.h>，因此要把这一层目录本身（以及它的父目录）
+      都放进包含路径。
+    -->
+    <IncludePath>$(MSBuildThisFileDirectory)Generated Files\winrt;$(MSBuildThisFileDirectory)Generated Files;$(MSBuildThisFileDirectory);$(MSBuildThisFileDirectory)..\ScreenControl.Core;$(MSBuildThisFileDirectory)..\ScreenControl.Device;$(MSBuildThisFileDirectory)..\ScreenControl.Imaging;$(IncludePath)</IncludePath>
+    <IntDir Condition="'$(Platform)'!='' and '$(Configuration)'!=''">$(MSBuildThisFileDirectory)..\..\out\obj\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <OutDir Condition="'$(Platform)'!='' and '$(Configuration)'!=''" >$(MSBuildThisFileDirectory)..\..\out\$(Platform)\$(Configuration)\</OutDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <WarningLevel>Level4</WarningLevel>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8 /bigobj</AdditionalOptions>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <Manifest Include="app.manifest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="AppClass.h" />
+    <ClInclude Include="MainWindow.h" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="AppClass.cpp" />
+    <ClCompile Include="MainWindow.cpp" />
+  </ItemGroup>
+
+  <!-- 依赖下层静态库 -->
+  <ItemGroup>
+    <ProjectReference Include="..\ScreenControl.Core\ScreenControl.Core.vcxproj">
+      <Project>{8A4C6E33-2F53-4B74-BD9C-3E2F4A5B6C73}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\ScreenControl.Device\ScreenControl.Device.vcxproj">
+      <Project>{6E2A4C11-0D31-4F52-9B7A-1C0D2E3F4A51}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\ScreenControl.Imaging\ScreenControl.Imaging.vcxproj">
+      <Project>{7F3B5D22-1E42-4A63-AC8B-2D1E3F4A5B62}</Project>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
