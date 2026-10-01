@@ -108,26 +108,48 @@ $sln     = 'D:\asus-aio-screen-control\v2\AsusAioScreenControl.sln'
 
 ---
 
+## 部署模式
+
+**当前：自包含（self-contained）+ 非打包。**
+
+`WindowsAppSDKSelfContained=true` 让 MSBuild 把 WinUI / Windows App SDK 的运行库
+完整复制到输出目录，程序从本地加载，**不依赖系统安装的 Windows App Runtime 版本**。
+Debug x64 输出目录约 159 MB / 137 个文件，含 `Microsoft.UI.Xaml.dll`（14.7 MB）、
+`Microsoft.WindowsAppRuntime.dll`、`CoreMessagingXP.dll`、
+`Microsoft.UI.Xaml.Controls.dll` 等。
+
+**v2.0 发布形态：MSIX 打包（packaged）**，运行库作为依赖由打包机制自动带上。
+
+---
+
 ## 已知问题
 
-1. **`warning MSB8027`：`WindowsAppRuntimeAutoInitializer.cpp` 重复项。**
-   来自 WindowsAppSDK 1.8 自带目标同时经 `build\native` 与 `buildTransitive\native`
-   导入同一文件。`Directory.Build.targets` 里的 `V2DeduplicateGeneratedClCompile`
-   已尝试在 `ClCompile` 之前去重，但该警告由 SDK 目标在更早阶段发出，未能消除。
-   这是**警告不是错误**，产物正常；如需彻底消除需等 SDK 侧修复。
+1. **`warning MSB8027`：`WindowsAppRuntimeAutoInitializer.cpp` 重复项（假阳性）。**
+   成因：WindowsAppSDK 1.8 自带目标同时经 `build\native` 与 `buildTransitive\native`
+   两条导入路径把同一份文件加进 `ClCompile`，两条路径展开后指向同一文件。
+   已在中 `Directory.Build.targets` 的 `V2DeduplicateGeneratedClCompile`
+   （挂在 `SetTargetPath` 之前）去重，**实测产物中每个自动初始化文件只编译出一个 .obj**
+   （`WindowsAppRuntimeAutoInitializer.obj`、`MddBootstrapAutoInitializer.obj` 等各一份），
+   即去重已生效、运行时初始化代码只保留一份。
+   该警告由 `Microsoft.CppBuild.targets` 的 `WarnCompileDuplicatedFilename` 目标
+   在 `ObjectFileName` 元数据层面发出，去重后仍会触发，属 SDK 侧的假阳性；
+   需要彻底消除可设 `IgnoreWarnCompileDuplicatedFilename=true`（当前未设，
+   以便真实的重名冲突仍能被发现）。
 
-2. **`DisplayPage` / `SettingsPage` 的界面代码生成路径。**
-   WinUI 3 的 C++ XAML 代码生成（`*.xaml.g.h` 中的 `InitializeComponent` 与命名元素
-   访问器）在命令行 MSBuild 下不产出：标记编译 pass 1 执行，pass 2 报
+2. **运行时启动：进程静默退出，尚未定位。**
+   Debug x64 可编译产出 `AsusAioScreenControl.exe`（1.6 MB），自包含运行库已完整部署，
+   但启动后进程立即退出，且**应用程序事件日志中没有对应的崩溃/错误事件**
+   （不是 DLL 缺失类失败）。同一套 WinUI 3 + 自包含配置在最小探针程序中已验证可以
+   正常弹出窗口，差异集中在窗口构建方式，需下一轮继续定位。
+
+3. **WinUI 3 的 C++ XAML 代码生成在命令行 MSBuild 下不产出。**
+   标记编译 pass 1 执行，pass 2 报
    `XamlCompiler error WMC1007: Cannot resolve metadata for WinUI types`。
-   已逐项验证下列手段均未解决：原生框架口径、默认/显式 `<Page>` 项、
-   增加 `<ApplicationDefinition>`、向 XAML 编译器显式喂 WinMD 元数据。
+   已逐项验证未解决：原生框架口径、默认/显式 `<Page>` 项、增加 `<ApplicationDefinition>`、
+   向 XAML 编译器显式喂 WinMD 元数据、为 `MainWindow` 加 MIDL runtimeclass。
    该路径依赖 Visual Studio 项目系统注入的状态。
-   当前界面用纯 C++/WinRT 构建（`MainWindow.cpp`），不依赖生成头。
-
-3. **运行时稳定性待验证。**
-   Debug x64 可编译产出 `AsusAioScreenControl.exe`；本次会话的启动验证未能取得
-   确定结论（执行日志为空，需下一轮用前台命令复测）。
+   因此界面用纯 C++/WinRT 构建（`MainWindow.cpp`：NavigationView + Frame + Mica +
+   内容扩展标题栏 + 深浅色跟随系统），不依赖任何生成头。
 
 ---
 

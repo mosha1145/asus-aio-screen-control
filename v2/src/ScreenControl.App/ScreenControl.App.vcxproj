@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!--
   ScreenControl.App — WinUI 3 应用（非打包，C++/WinRT）
 
@@ -28,12 +28,18 @@
     <DefaultLanguage>zh-CN</DefaultLanguage>
     <MinimumVisualStudioVersion>16.0</MinimumVisualStudioVersion>
     <AppContainerApplication>false</AppContainerApplication>
-    <!-- 非打包：免 MSIX 部署，双击 exe 即可运行（需系统安装 Windows App Runtime 1.8） -->
+    <!--
+      部署模式：自包含（self-contained）+ 非打包。
+      WindowsAppSDKSelfContained=true 让 MSBuild 把 WinUI / Windows App SDK 的
+      运行库（Microsoft.UI.Xaml.dll 等）完整复制到输出目录，程序从本地加载，
+      不依赖系统上安装的 Windows App Runtime 版本 —— 独立桌面应用的标准做法，
+      调试期最省心。发布阶段再改走 MSIX 打包（packaged），由打包机制带依赖。
+    -->
     <AppxPackage>false</AppxPackage>
     <ApplicationType>Windows Store</ApplicationType>
     <ApplicationTypeRevision>10.0</ApplicationTypeRevision>
     <WindowsPackageType>None</WindowsPackageType>
-    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <UseWinUI>true</UseWinUI>
     <EnableMsixTooling>false</EnableMsixTooling>
     <DesktopCompatible>true</DesktopCompatible>

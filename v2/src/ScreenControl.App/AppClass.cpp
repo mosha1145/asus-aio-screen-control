@@ -1,7 +1,8 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "AppClass.h"
 
 #include "AppConfig.h"
+#include "MainWindow.h"
 
 #include <sstream>
 
@@ -48,7 +49,7 @@ namespace ScreenControl
         const bool migrated = store.Load();
         m_configSummary = BuildConfigSummary(store, migrated);
 
-        m_mainWindow = std::make_unique<MainWindow>();
+        m_mainWindow = std::make_unique<ScreenControl::MainWindow>();
         m_mainWindow->Window().Activate();
 
         ApplyTheme(store.Data().appTheme);

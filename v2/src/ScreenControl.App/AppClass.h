@@ -2,7 +2,7 @@
 
 #include "pch.h"
 
-#include "MainWindow.h"
+namespace ScreenControl { class MainWindow; }
 
 namespace ScreenControl
 {
@@ -24,7 +24,8 @@ namespace ScreenControl
         std::wstring const& ConfigSummary() const noexcept { return m_configSummary; }
 
     private:
-        std::unique_ptr<MainWindow> m_mainWindow;
+        // MainWindow 是本工程的普通 C++ 类（非 MIDL runtimeclass），用智能指针持有。
+        std::unique_ptr<ScreenControl::MainWindow> m_mainWindow;
         std::wstring m_configSummary;
 
         static App* s_current;

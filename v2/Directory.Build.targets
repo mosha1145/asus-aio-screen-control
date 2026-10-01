@@ -53,16 +53,27 @@
   <!--
     去重 ClCompile：修 MSB8027。
     WindowsAppSDK 1.8 同时通过 build\native 与 buildTransitive\native 两条路径
-    把同一个 WindowsAppRuntimeAutoInitializer.cpp 加进 ClCompile，MSBuild 按
-    「同目录同名输出」判定为重复项（warning MSB8027）。两者其实是同一份文件，
-    去重即可，不影响功能。
+    把同一个 WindowsAppRuntimeAutoInitializer.cpp（以及
+    MddBootstrapAutoInitializer.cpp / DeploymentManagerAutoInitializer.cpp 等）
+    加进 ClCompile，两条路径展开后指向同一份文件，MSBuild 按「同目录同名输出」
+    判定为重复项。
+
+    注意时机：MSB8027 由 Microsoft.CppBuild.targets 的 SetTargetPath 目标发出，
+    必须在那之前完成去重，否则 ClCompile 上是看不到警告的。因此这里挂在
+    SetTargetPath 之前（并保留 ClCompile 作为兜底）。
   -->
-  <Target Name="V2DeduplicateGeneratedClCompile" BeforeTargets="ClCompile">
+  <Target Name="V2DeduplicateGeneratedClCompile"
+          BeforeTargets="SetTargetPath;ClCompile">
     <ItemGroup>
-      <_V2ClCompileDedup Include="@(ClCompile)" />
+      <!-- 用 FullPath 作为去重键：两条导入路径的 Include 字符串不同但指向同一文件。 -->
+      <_V2ClCompileAll Include="@(ClCompile)">
+        <_V2Key>%(FullPath)</_V2Key>
+      </_V2ClCompileAll>
+      <_V2ClCompileUnique Include="@(_V2ClCompileAll->Distinct())" />
       <ClCompile Remove="@(ClCompile)" />
-      <ClCompile Include="@(_V2ClCompileDedup->Distinct())" />
-      <_V2ClCompileDedup Remove="@(_V2ClCompileDedup)" />
+      <ClCompile Include="@(_V2ClCompileUnique)" />
+      <_V2ClCompileAll Remove="@(_V2ClCompileAll)" />
+      <_V2ClCompileUnique Remove="@(_V2ClCompileUnique)" />
     </ItemGroup>
   </Target>
 

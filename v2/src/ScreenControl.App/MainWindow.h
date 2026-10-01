@@ -5,8 +5,12 @@
 namespace ScreenControl
 {
     // 主窗口：NavigationView + Frame 导航外壳。
-    // Mica 背衬与自定义标题栏在构造函数里配置。
-    // 注意：投影类型在 winrt:: 命名空间下，头文件里必须写全 winrt:: 限定。
+    //
+    // 刻意做成「普通 C++ 类 + 持有 Window 成员」，而不是 MIDL runtimeclass：
+    // 继承 Microsoft.UI.Xaml.Window 的 runtimeclass 需要 C++/WinRT 的
+    // composable 投影，而该投影依赖 WinUI XAML 编译器的代码生成（命令行 MSBuild
+    // 下不产出，见 README 已知问题）。直接构造 Window 不依赖任何生成头，
+    // 与已验证可运行的探针程序一致。
     class MainWindow
     {
     public:
