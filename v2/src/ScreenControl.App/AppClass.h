@@ -1,15 +1,14 @@
 #pragma once
 
 #include "pch.h"
-
-namespace ScreenControl { class MainWindow; }
+#include "MainWindow.h"
 
 namespace ScreenControl
 {
     // 应用对象。
     // 刻意使用纯 C++/WinRT 的 ApplicationT<App>，不用 XAML Application（App.xaml）：
     // 命令行 MSBuild 下 XAML Application 的 C++ 代码生成不产出 *.xaml.g.h，
-    // 会导致编译失败；纯 C++ App 类不依赖生成头，实测可正常启动。
+    // 会导致编译失败；纯 C++ App 类不依赖生成头。
     struct App : winrt::Microsoft::UI::Xaml::ApplicationT<App>
     {
         App() = default;

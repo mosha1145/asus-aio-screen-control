@@ -136,20 +136,56 @@ Debug x64 输出目录约 159 MB / 137 个文件，含 `Microsoft.UI.Xaml.dll`�
    需要彻底消除可设 `IgnoreWarnCompileDuplicatedFilename=true`（当前未设，
    以便真实的重名冲突仍能被发现）。
 
-2. **运行时启动：进程静默退出，尚未定位。**
-   Debug x64 可编译产出 `AsusAioScreenControl.exe`（1.6 MB），自包含运行库已完整部署，
-   但启动后进程立即退出，且**应用程序事件日志中没有对应的崩溃/错误事件**
-   （不是 DLL 缺失类失败）。同一套 WinUI 3 + 自包含配置在最小探针程序中已验证可以
-   正常弹出窗口，差异集中在窗口构建方式，需下一轮继续定位。
+2. **运行时启动崩溃：`Window.Content(...)` 触发访问冲突（`0xC0000005`）。**
+   已用逐行日志把范围缩到最小可复现：
+
+   ```
+   [App] OnLaunched entered          <- Application::Start 回调已进入，OnLaunched 正常触发
+   [App] config loaded
+   [MainWindow] ctor enter
+   [MainWindow] Window() ok          <- Window 创建成功
+   [MainWindow] Grid() ok
+   [MainWindow] TextBlock props ok
+   [MainWindow] Children().Append ok
+   （到此为止，进程消失）
+   ```
+
+   崩溃点在 `m_window.Content(root)`，事件日志确认为
+   `AsusAioScreenControl.exe` 自身模块内 `0xc0000005`（访问冲突），
+   且**不可被 `catch (hresult_error)` 捕获**（是原生层访问冲突，不是可传播的 HRESULT）。
+
+   已排除（不是这些原因）：
+   * `Application::Start` 未调用 —— 已调用，`OnLaunched` 确认触发；
+   * 消息循环 / `DispatcherQueueController` 缺失 —— WinUI 3 由
+     `Application::Start` 内部建立并驱动消息泵，不需要手工建；
+   * `init_apartment` 冲突 —— 已移除手工调用；
+   * 窗口未 Activate —— 崩溃发生在 `Activate()` 之前；
+   * 施工顺序 —— 曾把 `Window()` 提到最前，仍崩在同一句；
+   * 主题资源缺失 —— `Application::Current().Resources().Lookup(...)`
+     已换成 `TryLookup`（不再抛异常），崩溃点未变。
+
+   当前判断：**`Window` 缺少与该运行时类型的关联**。本工程用「普通 C++ 类 +
+   `Window` 成员」的方式建窗口，没有把窗口声明为 MIDL runtimeclass。
+   尝试补回 `runtimeclass MainWindow : Microsoft.UI.Xaml.Window` 时，
+   C++/WinRT 生成的 `ScreenControl` 投影里 `MainWindow` 是**空的**
+   （`WINRT_EXPORT namespace winrt::ScreenControl { }`），
+   拿不到 `MainWindowT`，因此无法编译。
+
+   **结论：这条路的根因在上游 —— 命令行 MSBuild 下 WinUI 3 的 C++ 投影/代码生成
+   不完整（与下面第 3 条 WMC1007 同源）。规范解法是用 Visual Studio 打开
+   `AsusAioScreenControl.sln`、用官方「WinUI 3 桌面应用 (原生)」模板生成工程后开发
+   XAML 界面；命令行构建仅适合验证静态库层（Device / Imaging / Core 均已通过）。**
 
 3. **WinUI 3 的 C++ XAML 代码生成在命令行 MSBuild 下不产出。**
    标记编译 pass 1 执行，pass 2 报
    `XamlCompiler error WMC1007: Cannot resolve metadata for WinUI types`。
    已逐项验证未解决：原生框架口径、默认/显式 `<Page>` 项、增加 `<ApplicationDefinition>`、
-   向 XAML 编译器显式喂 WinMD 元数据、为 `MainWindow` 加 MIDL runtimeclass。
-   该路径依赖 Visual Studio 项目系统注入的状态。
-   因此界面用纯 C++/WinRT 构建（`MainWindow.cpp`：NavigationView + Frame + Mica +
-   内容扩展标题栏 + 深浅色跟随系统），不依赖任何生成头。
+   向 XAML 编译器显式喂 WinMD 元数据。该路径依赖 Visual Studio 项目系统注入的状态。
+
+   当前界面代码（`MainWindow.cpp`，含 NavigationView + Frame + Mica +
+   内容扩展标题栏 + 深浅色跟随系统的完整实现）保留在仓库中，但**会在启动时崩溃**。
+   仓库当前保留的是一份最小化的调试版本（只放一个 TextBlock），
+   以便下一轮直接用日志定位；完整界面实现见本文件历史版本 / git 记录。
 
 ---
 
