@@ -302,7 +302,7 @@ config_store ──(读)──> MainWindow ──(写)──> config_store
 | 控制接口 MI_00 | caps 441（wire 440）—— 亮度、开关 |
 | 图像接口 MI_01 | caps 1025（wire 1024）—— JPEG 块流 |
 | 打开方式 | `CreateFileW(path, GENERIC_READ\|GENERIC_WRITE, FILE_SHARE_READ\|FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL)`，同步 I/O |
-| 屏幕原生分辨率 | **320×320**，480×480 会导致 WriteFile 失败 |
+| 屏幕原生分辨率 | **320×320** |
 | 刷新上限 | 0ms 块间延迟实测 559 fps 无花屏（无实际意义） |
 
 ### 3.2 报文结构（三条硬规则）
