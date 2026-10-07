@@ -110,8 +110,8 @@ Error: SetNamedSecurityInfoW failed (Win32 5): grantWrite(D:\asus-aio-screen-con
 启动恢复 → _init_device(): 用 config 里的 screen_on/brightness 复原设备状态，
                           再用 display_type 复原显示内容（photo/video/screen/smtc）
 ```
-**没有唤醒/接管命令**——报告已明确修正早期错误结论：纯 JPEG 流即可驱动显示，
-`0x80000112` 只是亮度命令。
+设备接受两类输入：图像接口的 JPEG 数据流，以及控制接口的控制命令
+（`0x80000112` 亮度、`0x80000110` 屏幕开关）。
 
 **D. 配置链路（贯穿全程）**
 ```
@@ -145,7 +145,7 @@ v1 里**没有统一的应用状态对象**，状态散落在三处，重构时�
 | `TufCooler.send_ctrl(cmd_id, value)` | 5 字节：小端 4 字节 cmd_id + 1 字节 value |
 | `TufCooler.set_brightness(v)` | `0x80000112`，钳位 0–100 |
 | `TufCooler.set_screen(on)` | `0x80000110`，0x00 开 / 0x01 关 |
-| `TufCooler.wake(brightness=None)` | 残留接口，实测非唤醒；v2 可删 |
+| `TufCooler.wake(brightness=None)` | 残留接口，实为亮度命令的包装；v2 无需保留 |
 | `TufCooler.send_jpeg_frame(jpg, block_delay=0.004)` | 分块 + 每块 3 次重试，返回 `(块数, 是否全部成功)` |
 
 **已知问题**
@@ -346,7 +346,7 @@ N 直接决定单帧传输时间：质量 50 ≈ 5–8 块 / 85 ≈ 10–15 块 
 |---|---|
 | 固件不保留最后一帧 | "显示" = 持续发流；静态图也必须循环重发 |
 | 约 3 秒无数据自动回自带动画 | 停止发送即自动恢复；静态图可用低频心跳（1–2 Hz）维持 |
-| 不需要任何唤醒/接管命令 | 发帧与控制命令完全解耦，可放两个独立组件 |
+| 发帧与控制命令相互独立 | 可放两个独立组件，互不阻塞 |
 | InfoHub 与本程序争抢同一 HID 接口 | 必须检测并提示用户关闭 InfoHub |
 
 ### 3.5 异常处理（v1 现状与 v2 要求）
