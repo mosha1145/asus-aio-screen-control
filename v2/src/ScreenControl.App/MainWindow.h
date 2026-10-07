@@ -1,22 +1,21 @@
 #pragma once
 
+// 主窗口（x:Class="ScreenControl.MainWindow" 的代码后台声明）。
+// 与官方 WinUI3 C++ 模板一致：include C++/WinRT 生成的 MainWindow.g.h
+// （内含 MainWindow_base 基类），它会按 __has_include 自动带上 XAML 编译器
+// 生成的 MainWindow.xaml.g.h（MainWindowT 模板 + x:Name 元素访问器）。
+// 实现类定义在 winrt::ScreenControl::implementation 命名空间。
+
 #include "MainWindow.g.h"
 
-namespace ScreenControl
+namespace winrt::ScreenControl::implementation
 {
-    // 主窗口：NavigationView + Frame 导航外壳。
-    //
-    // 继承 MIDL 生成的 MainWindowT（对应 IDL 里的
-    //   runtimeclass MainWindow : Microsoft.UI.Xaml.Window
-    // ）。窗口实例由基类构造函数创建，因此不再持有 Window 成员。
-    //
-    // 说明：命令行 MSBuild 下 C++/WinRT 生成的 ScreenControl 投影是空的
-    // （见 README 已知问题，与 WMC1007 同源），所以本文件在纯命令行下无法编译；
-    // 用 Visual Studio 2022 打开 AsusAioScreenControl.sln 构建即可正常生成投影与
-    // XAML 代码，界面层由此正常工作。
     struct MainWindow : MainWindowT<MainWindow>
     {
         MainWindow();
+
+        int32_t MyProperty();
+        void MyProperty(int32_t value);
 
         void NavigateTo(std::wstring const& tag);
 
@@ -30,7 +29,7 @@ namespace ScreenControl
     };
 }
 
-namespace ScreenControl::factory_implementation
+namespace winrt::ScreenControl::factory_implementation
 {
     struct MainWindow : MainWindowT<MainWindow, implementation::MainWindow>
     {

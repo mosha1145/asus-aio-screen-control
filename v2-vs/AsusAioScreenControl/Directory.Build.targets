@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v2-vs 模板工程共享构建目标（精简版）
+  =====================================================================
+  只做一件事：把 WinUI / Windows App SDK 的 WinMD 元数据注入 @(Reference)。
+  cppwinrt（生成 C++/WinRT 投影头）与 MIDL（编译 .idl）都需要这些元数据，
+  缺了就会报：
+    - MIDL20 unresolved type declaration: Microsoft.UI.Xaml.Window
+    - cppwinrt @...cppwinrt_ref.rsp 退出码 1（ref.rsp 里 winmd 列表为空，文件未生成）
+
+  必须放在 Directory.Build.targets（而不是 .props）：NuGetPackageRoot 在
+  *.nuget.g.props 里才赋值，.props 阶段求值会得到空路径（已实测）。
+  XAML 编译（MarkupCompilePass1/2）与生成文件编译由 VS 官方机制负责，
+  本文件不重复挂载，避免在 VS 环境下 XAML 编译跑两遍。
+  =====================================================================
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <WasdkPkgRoot Condition="'$(NuGetPackageRoot)' != ''">$(NuGetPackageRoot)\</WasdkPkgRoot>
+  </PropertyGroup>
+
+  <!--
+    WinUI / Windows App SDK 的 WinMD 元数据。
+    MIDL（编译 .idl）与 cppwinrt（生成投影头）都需要它们。
+  -->
+  <ItemGroup Condition="'$(WasdkPkgRoot)' != '' And ('$(UseWinUI)' == 'true' Or '$(ConsumeWindowsAppSdk)' == 'true')">
+    <Reference Include="$(WasdkPkgRoot)microsoft.windowsappsdk.winui\1.8.250906003\metadata\*.winmd" />
+    <Reference Include="$(WasdkPkgRoot)microsoft.windowsappsdk.foundation\1.8.250906002\metadata\*.winmd" />
+    <Reference Include="$(WasdkPkgRoot)microsoft.windowsappsdk.interactiveexperiences\1.8.250906004\metadata\10.0.18362.0\*.winmd" />
+    <!-- Microsoft.UI.Xaml.winmd 引用了 WebView2 的类型，投影生成需要它。 -->
+    <Reference Include="$(WasdkPkgRoot)microsoft.web.webview2\1.0.3179.45\lib\Microsoft.Web.WebView2.Core.winmd"
+               Condition="Exists('$(WasdkPkgRoot)microsoft.web.webview2\1.0.3179.45\lib\Microsoft.Web.WebView2.Core.winmd')" />
+  </ItemGroup>
+
+  <!--
+    XAML 元数据提供程序实现编译：
+    cppwinrt 在工程目录 Generated Files\ 下生成 XamlMetaDataProvider.g.cpp
+    （含 winrt_make 工厂与 GetXamlType/GetXmlnsDefinitions 实现）。
+    官方模板的 ComputeXamlGeneratedCompileInputs 在桌面工程不会把它加进
+    ClCompile，缺了它就报 LNK2019：XamlMetaDataProvider::GetXmlnsDefinitions /
+    GetXamlType 等无法解析。这里手动加入。
+    注意该生成文件没有 #include "pch.h"，必须关闭强制预编译头（/Yu），
+    并用 ForcedIncludeFiles 强制包含 pch.h。
+  -->
+  <Target Name="V2VsAddXamlGeneratedSources" BeforeTargets="ClCompile">
+    <ItemGroup Condition="'$(UseWinUI)' == 'true'">
+      <!-- XAML 编译器生成的 XamlMetaDataProvider 实现（GetXamlType/GetXmlnsDefinitions 等）。
+           官方 ComputeXamlGeneratedCompileInputs 在桌面工程不把它加进 ClCompile，
+           缺了它就报 LNK2019。带 #include "pch.h"，正常 PCH 编译。 -->
+      <ClCompile Include="$(ProjectDir)Generated Files\XamlTypeInfo.Impl.g.cpp"
+                 Condition="Exists('$(ProjectDir)Generated Files\XamlTypeInfo.Impl.g.cpp')" />
+      <!-- 官方入口：XamlMetaDataProvider.cpp 自行 #include "pch.h" +
+           XamlMetaDataProvider.h（implementation/factory_implementation）+
+           XamlMetaDataProvider.g.cpp（winrt_make 工厂），一条链路全含。 -->
+      <ClCompile Include="$(ProjectDir)Generated Files\XamlMetaDataProvider.cpp"
+                 Condition="Exists('$(ProjectDir)Generated Files\XamlMetaDataProvider.cpp')" />
+      <!-- 补充实现：XamlTypeInfoProvider::OtherProviders（官方 pass2 未生成
+           XamlTypeInfo.g.cpp，手工补上，语义与官方一致：返回空列表）。 -->
+      <ClCompile Include="$(ProjectDir)Generated Files\XamlTypeInfo.g.cpp"
+                 Condition="Exists('$(ProjectDir)Generated Files\XamlTypeInfo.g.cpp')" />
+      <!-- 补充实现：应用入口 wWinMain（官方 pass2 未生成 App.xaml.g.cpp）。
+           带 #include "pch.h"，正常 PCH 编译。 -->
+      <ClCompile Include="$(ProjectDir)App.xaml.g.cpp"
+                 Condition="Exists('$(ProjectDir)App.xaml.g.cpp')" />
+    </ItemGroup>
+  </Target>
+
+</Project>

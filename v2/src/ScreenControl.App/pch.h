@@ -34,3 +34,13 @@
 
 #include <memory>
 #include <string>
+
+// XAML 编译器生成的 XamlTypeInfo.g.cpp 用 static_assert 校验实现头已包含
+// （否则报 C2039: "MainWindow" 不是 "winrt::ScreenControl::implementation" 的成员）。
+// App.xaml.g.h / MainWindow.xaml.g.h 由 MarkupCompilePass1 在 ClCompile 之前生成。
+#include "App.h"
+#include "MainWindow.h"
+// XAML 编译器生成的 XamlMetaDataProvider.h 定义 implementation::XamlMetaDataProvider
+// （GetXamlType/GetXmlnsDefinitions），XamlTypeInfo.g.cpp 与
+// XamlMetaDataProvider.g.cpp（winrt_make 工厂）都依赖它。
+#include "XamlMetaDataProvider.h"

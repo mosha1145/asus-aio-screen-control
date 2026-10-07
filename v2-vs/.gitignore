@@ -1,0 +1,62 @@
+# v2-vs — Visual Studio 工程（WinUI 3 官方模板形态）
+#
+# 说明：本目录是用 Visual Studio 官方「WinUI 3 桌面应用 (原生)」模板建立的
+# 界面层工程，与 v2\ 下的手写工程并存。仅提交工程与源码；
+# 构建产物、XAML 生成中间文件一律不入库。
+#
+# 注意：App.xaml.g.cpp 是【手写】的入口补充（当前构建链不生成 wWinMain，
+# 会导致 LNK2019），属于源码，故意不忽略。
+
+# 构建输出 / 中间目录
+x64/
+Win32/
+ARM64/
+Debug/
+Release/
+out/
+obj/
+bin/
+AppPackages/
+BundleArtifacts/
+
+# XAML 与 MIDL 生成中间产物
+Generated Files/
+*.g.hpp
+*.tlog
+*.log
+*.idb
+*.pdb
+*.ilk
+*.exp
+*.iobj
+*.ipdb
+
+# Visual Studio 用户/本地设置
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.vcxproj.user
+*.aps
+
+# 对象文件
+*.obj
+*.pch
+*.gch
+
+# MSIX 打包中间产物
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+*.appxupload
+*.msixupload
+
+# NuGet 还原产物
+packages/
+**/project.assets.json
+**/project.nuget.cache
+**/*.nuget.g.props
+**/*.nuget.g.targets
+**/*.nuget.dgspec.json

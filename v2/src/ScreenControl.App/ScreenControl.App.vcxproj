@@ -87,7 +87,7 @@
       #include <winrt/Microsoft.UI.Xaml.h>，因此要把这一层目录本身（以及它的父目录）
       都放进包含路径。
     -->
-    <IncludePath>$(MSBuildThisFileDirectory)Generated Files\winrt;$(MSBuildThisFileDirectory)Generated Files;$(MSBuildThisFileDirectory);$(MSBuildThisFileDirectory)..\ScreenControl.Core;$(MSBuildThisFileDirectory)..\ScreenControl.Device;$(MSBuildThisFileDirectory)..\ScreenControl.Imaging;$(IncludePath)</IncludePath>
+    <IncludePath>$(MSBuildThisFileDirectory)Generated Files\winrt;$(MSBuildThisFileDirectory)Generated Files;$(MSBuildThisFileDirectory);$(IntDir);$(MSBuildThisFileDirectory)..\ScreenControl.Core;$(MSBuildThisFileDirectory)..\ScreenControl.Device;$(MSBuildThisFileDirectory)..\ScreenControl.Imaging;$(IncludePath)</IncludePath>
     <IntDir Condition="'$(Platform)'!='' and '$(Configuration)'!=''">$(MSBuildThisFileDirectory)..\..\out\obj\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
     <OutDir Condition="'$(Platform)'!='' and '$(Configuration)'!=''" >$(MSBuildThisFileDirectory)..\..\out\$(Platform)\$(Configuration)\</OutDir>
   </PropertyGroup>
@@ -126,8 +126,27 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Midl Include="MainWindow.idl">
+      <SubType>Code</SubType>
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+    </Midl>
+  </ItemGroup>
+
+  <!--
+    XAML 项（VS WinUI3 C++ 模板标准写法，VS 下必选）：
+    App.xaml 显式声明为 ApplicationDefinition（提供 AppT 基类 +
+    XamlMetaDataProvider），MainWindow.xaml 显式声明为 Page。
+    生成 App.xaml.g.h 与 MainWindow.xaml.g.h（InitializeComponent +
+    x:Name 访问器）。C++ 工程的默认发现不可靠，必须显式声明。
+  -->
+  <ItemGroup>
+    <ApplicationDefinition Include="App.xaml" />
+    <Page Include="MainWindow.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="AppClass.h" />
+    <ClInclude Include="App.h" />
     <ClInclude Include="MainWindow.h" />
   </ItemGroup>
 
@@ -135,17 +154,9 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="AppClass.cpp" />
+    <ClCompile Include="App.xaml.cpp" />
     <ClCompile Include="MainWindow.cpp" />
-    <!-- MIDL 生成的运行时类工厂注册（C++/WinRT 按 MainWindow.idl 生成） -->
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- MainWindow 必须是 runtimeclass(Microsoft.UI.Xaml.Window)：
-         否则窗口与运行时类型无关联，Window.Content(...) 会在 XAML 原生层
-         触发访问冲突 0xC0000005。由 Visual Studio 项目系统构建时投影正常生成。 -->
-    <Midl Include="MainWindow.idl" />
   </ItemGroup>
 
   <!-- 依赖下层静态库 -->

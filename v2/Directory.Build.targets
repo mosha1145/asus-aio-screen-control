@@ -51,6 +51,58 @@
   </Target>
 
   <!--
+    C++ 工程的 XAML 编译挂载（关键修复）：
+    WinUI 3 的 MarkupCompilePass1/2 目标定义在 NuGet 包
+    Microsoft.UI.Xaml.Markup.Compiler.interop.targets 里（挂 @(Page)/
+    @(ApplicationDefinition)），但该 targets 只把目标挂到 Managed 构建链
+    （PrepareResources / CoreCompile）——C++ 工程（Microsoft.CppBuild.targets）
+    从不执行这些目标，所以 App.xaml.g.h / MainWindow.xaml.g.h 永不生成，
+    编译报 "InitializeComponent 找不到 / App.xaml.g.h 无法打开"。
+
+    官方 C++ 的挂载点在 VS 的
+    MSBuild\Microsoft\WindowsXaml\v17.0\8.21\Microsoft.Windows.UI.Xaml.CPP.Targets：
+        BeforeClCompileTargets = MarkupCompilePass1; ...
+        AfterBuildCompileTargets = ...; MarkupCompilePass2; ...
+    该文件只对 UAP/8.x 工程由 RedirectionTarget 生效，桌面（WindowsAppSDK）
+    工程不会走到。这里手工挂载（目标名与 NuGet interop.targets 完全一致，
+    8.21 官方就是用的这两个名字）。
+  -->
+  <PropertyGroup Condition="'$(UseWinUI)' == 'true'">
+    <BeforeClCompileTargets>MarkupCompilePass1;$(BeforeClCompileTargets)</BeforeClCompileTargets>
+    <AfterBuildCompileTargets>$(AfterBuildCompileTargets);MarkupCompilePass2</AfterBuildCompileTargets>
+  </PropertyGroup>
+
+  <!--
+    XAML 生成的实现文件编译（关键修复之二）：
+    WinUI3 XAML 编译器（pass1/pass2）把实现输出到 $(IntDir)：
+      App.xaml.g.h / MainWindow.xaml.g.h   （页面声明：MainWindowT 模板）
+      App.xaml.g.hpp / MainWindow.xaml.g.hpp（页面实现：InitializeComponent/
+        Connect/GetBindingConnector + 显式实例化）
+      XamlTypeInfo.g.cpp / XamlTypeInfo.Impl.g.cpp（XamlMetaDataProvider 实现）
+    C++ 工程不会自动把这些文件加进 ClCompile（8.21 的
+    ComputeXamlGeneratedCompileInputs 目标在桌面工程不存在），缺了它们就报
+    LNK2019：MainWindowT::InitializeComponent、XamlMetaDataProvider::GetXamlType、
+    winrt_make_ScreenControl_XamlMetaDataProvider 等。
+    另外 cppwinrt 在 src 工程目录 Generated Files\ 下生成的
+    XamlMetaDataProvider.g.cpp 提供 winrt_make 工厂，也要编译。
+  -->
+  <Target Name="V2AddXamlGeneratedSources">
+    <ItemGroup Condition="'$(UseWinUI)' == 'true'">
+      <ClCompile Include="$(IntDir)App.xaml.g.hpp" Condition="Exists('$(IntDir)App.xaml.g.hpp')" />
+      <ClCompile Include="$(IntDir)MainWindow.xaml.g.hpp" Condition="Exists('$(IntDir)MainWindow.xaml.g.hpp')" />
+      <ClCompile Include="$(IntDir)XamlTypeInfo.g.cpp" Condition="Exists('$(IntDir)XamlTypeInfo.g.cpp')" />
+      <ClCompile Include="$(IntDir)XamlTypeInfo.Impl.g.cpp" Condition="Exists('$(IntDir)XamlTypeInfo.Impl.g.cpp')" />
+      <ClCompile Include="$(MSBuildThisFileDirectory)src\ScreenControl.App\Generated Files\XamlMetaDataProvider.g.cpp"
+                 Condition="Exists('$(MSBuildThisFileDirectory)src\ScreenControl.App\Generated Files\XamlMetaDataProvider.g.cpp')">
+        <!-- 该生成文件没有 #include "pch.h"，必须关闭强制预编译头（/Yu），
+             并用 ForcedIncludeFiles 强制包含 pch.h 以获得 winrt 与实现类型。 -->
+        <PrecompiledHeader>NotUsing</PrecompiledHeader>
+        <ForcedIncludeFiles>pch.h</ForcedIncludeFiles>
+      </ClCompile>
+    </ItemGroup>
+  </Target>
+
+  <!--
     去重 ClCompile：修 MSB8027。
     WindowsAppSDK 1.8 同时通过 build\native 与 buildTransitive\native 两条路径
     把同一个 WindowsAppRuntimeAutoInitializer.cpp（以及

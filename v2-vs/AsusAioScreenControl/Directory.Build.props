@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  v2-vs 模板工程共享构建属性（精简版，修复官方模板的 UAP 框架口径问题）
+  =====================================================================
+  官方 WinUI3 C++ 模板设置 <ApplicationType>Windows Store</ApplicationType>，
+  使 Microsoft.NuGet.targets 推断出 TargetPlatformIdentifier=UAP 并报
+  "Your project does not reference UAP,Version=v10.0 framework"。
+  这里把框架口径对齐成「原生桌面」，并启用非打包自包含部署。
+  发布阶段若走 MSIX，可去掉 WindowsPackageType=None。
+  =====================================================================
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <!-- 原生桌面工程口径 -->
+    <TargetPlatformIdentifier>Windows</TargetPlatformIdentifier>
+    <TargetFrameworkIdentifier>native</TargetFrameworkIdentifier>
+    <TargetFrameworkVersion>v0.0</TargetFrameworkVersion>
+    <TargetFramework>native,Version=v0.0</TargetFramework>
+    <WindowsPackageType>None</WindowsPackageType>
+    <!-- WindowsAppSDK native 资产按 RID 解析 -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <!-- 非打包自包含：运行库 DLL 复制到输出目录，不依赖系统 Windows App Runtime -->
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+
+    <!-- XAML 项默认发现（官方模板已显式声明 Page/ApplicationDefinition，保持默认即可） -->
+    <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
+    <EnableDefaultPageItems>true</EnableDefaultPageItems>
+
+    <!-- C++/WinRT -->
+    <CppWinRTOptimized>true</CppWinRTOptimized>
+    <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
+    <MinimalCoreWin>true</MinimalCoreWin>
+
+    <!-- 统一语言与警告等级 -->
+    <LanguageStandard>stdcpp20</LanguageStandard>
+    <WarningLevel>Level4</WarningLevel>
+  </PropertyGroup>
+
+</Project>

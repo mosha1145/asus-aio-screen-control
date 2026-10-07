@@ -30,7 +30,7 @@
   <PropertyGroup>
     <!-- 依赖版本（集中管理，升级只改这里） -->
     <WasdkVersion>1.8.250916003</WasdkVersion>
-    <CppWinRtVersion>2.0.240111.5</CppWinRtVersion>
+    <CppWinRtVersion>2.0.250303.1</CppWinRtVersion>
 
     <!-- 统一输出目录：v2\out\<Platform>\<Configuration>\ -->
     <OutDir>$(MSBuildThisFileDirectory)out\$(Platform)\$(Configuration)\</OutDir>
@@ -49,10 +49,12 @@
       必须让 SDK 用默认项发现（EnableDefaultPageItems=true）来收集 *.xaml。
       实测：手工声明 <Page .../> 不会触发 WinUI 的 XAML 代码生成，
       结果是 MainWindow.g.h / *.g.cpp 不生成，编译报 InitializeComponent 找不到。
-      本解决方案没有 App.xaml（App 类用纯 C++），因此关掉 ApplicationDefinition 默认项。
+      App.xaml 已存在（x:Class=ScreenControl.App 的标准 Application 声明，
+      提供 AppT 基类与 XamlMetaDataProvider 类型注册表），因此
+      EnableDefaultApplicationDefinition 也要打开。
     -->
-    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
-    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
+    <EnableDefaultPageItems>true</EnableDefaultPageItems>
 
     <!-- C++/WinRT -->
     <CppWinRTOptimized>true</CppWinRTOptimized>

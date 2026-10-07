@@ -1,12 +1,17 @@
 ﻿#include "pch.h"
 #include "MainWindow.h"
+#if __has_include("MainWindow.g.cpp")
+#include "MainWindow.g.cpp"
+#endif
+
+#include <Microsoft.UI.Windowing.h>
 
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Controls;
 using namespace Microsoft::UI::Xaml::Media;
 
-namespace ScreenControl
+namespace winrt::ScreenControl::implementation
 {
     namespace
     {
@@ -37,10 +42,23 @@ namespace ScreenControl
         }
     }
 
+    int32_t MainWindow::MyProperty()
+    {
+        throw hresult_not_implemented();
+    }
+
+    void MainWindow::MyProperty(int32_t /* value */)
+    {
+        throw hresult_not_implemented();
+    }
+
     MainWindow::MainWindow()
     {
+        // 从 MainWindow.xaml 加载根容器（RootGrid）并注册窗口类型。
+        InitializeComponent();
+
         // 根容器背景留空：一旦设了实色，Mica 就被盖住了。
-        Grid root;
+        Grid root = RootGrid();
 
         // ---- 自定义标题栏（占第一行，作为拖动区） ----
         m_titleBar.Height(44);
@@ -102,7 +120,6 @@ namespace ScreenControl
         root.Children().Append(m_titleBar);
         root.Children().Append(nav);
 
-        Content(root);
         Title(L"ASUS AIO Screen Control");
 
         SetupBackdropAndTitleBar();
