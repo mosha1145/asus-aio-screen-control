@@ -119,6 +119,16 @@ namespace ScreenControl::Core
             return false;
         }
 
+        // 播放前再试一次打开设备：用户可能刚关掉官方 InfoHub（它会独占 HID 接口）。
+        if (!m_device.IsOpen())
+        {
+            if (!m_device.Open())
+            {
+                Notify(L"无法打开水冷屏设备：请关闭官方 InfoHub 后重试（该软件会独占 HID 接口）。");
+                return false;
+            }
+        }
+
         const MediaKind kind = DetectMediaKind(path);
 
         m_running.store(true);

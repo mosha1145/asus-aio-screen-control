@@ -347,6 +347,14 @@ namespace winrt::ScreenControl::implementation
         ToggleSwitch screenSwitch;
         screenSwitch.Header(box_value(L"屏幕开关"));
         screenSwitch.IsOn(true);
+        // 屏幕开关 -> HID 控制命令 0x80000110（此前完全没接线）
+        screenSwitch.Toggled([this](IInspectable const& sender, RoutedEventArgs const&)
+        {
+            if (auto toggle = sender.try_as<ToggleSwitch>())
+            {
+                Player().SetScreenPower(toggle.IsOn());
+            }
+        });
         controls.Children().Append(screenSwitch);
 
         StackPanel brightnessRow;
@@ -359,6 +367,11 @@ namespace winrt::ScreenControl::implementation
         brightness.Maximum(100);
         brightness.Value(50);
         brightnessRow.Children().Append(brightness);
+        // 亮度 -> HID 控制命令 0x80000112（此前完全没接线）
+        brightness.ValueChanged([this](IInspectable const&, Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
+        {
+            Player().SetBrightness(static_cast<int>(args.NewValue()));
+        });
         controls.Children().Append(brightnessRow);
 
         ComboBox fitMode;
@@ -367,6 +380,17 @@ namespace winrt::ScreenControl::implementation
         fitMode.Items().Append(box_value(L"填充 · cover"));
         fitMode.Items().Append(box_value(L"拉伸 · stretch"));
         fitMode.SelectedIndex(0);
+        fitMode.SelectionChanged([this, fitMode](IInspectable const&, SelectionChangedEventArgs const&)
+        {
+            auto params = Player().Params();
+            switch (fitMode.SelectedIndex())
+            {
+            case 1: params.fitMode = ::ScreenControl::Imaging::FitMode::Cover; break;
+            case 2: params.fitMode = ::ScreenControl::Imaging::FitMode::Stretch; break;
+            default: params.fitMode = ::ScreenControl::Imaging::FitMode::Contain; break;
+            }
+            Player().SetParams(params);
+        });
         controls.Children().Append(fitMode);
 
         ComboBox rotation;
@@ -376,6 +400,18 @@ namespace winrt::ScreenControl::implementation
         rotation.Items().Append(box_value(L"180°"));
         rotation.Items().Append(box_value(L"270°"));
         rotation.SelectedIndex(0);
+        rotation.SelectionChanged([this, rotation](IInspectable const&, SelectionChangedEventArgs const&)
+        {
+            auto params = Player().Params();
+            switch (rotation.SelectedIndex())
+            {
+            case 1: params.rotation = ::ScreenControl::Imaging::Rotation::Deg90; break;
+            case 2: params.rotation = ::ScreenControl::Imaging::Rotation::Deg180; break;
+            case 3: params.rotation = ::ScreenControl::Imaging::Rotation::Deg270; break;
+            default: params.rotation = ::ScreenControl::Imaging::Rotation::Deg0; break;
+            }
+            Player().SetParams(params);
+        });
         controls.Children().Append(rotation);
 
         InfoBar info;
@@ -397,7 +433,7 @@ namespace winrt::ScreenControl::implementation
         media.Spacing(10);
 
         m_deviceText = TextBlock{};
-        m_deviceText.Text(Player().DeviceReady() ? L"设备：已连接" : L"设备：未连接");
+        m_deviceText.Text(Player().DeviceReady() ? L"设备：已连接" : L"设备：未连接（若官方 InfoHub 正在运行，请先退出它——它会独占 HID 接口）");
         media.Children().Append(m_deviceText);
 
         m_statusText = TextBlock{};
