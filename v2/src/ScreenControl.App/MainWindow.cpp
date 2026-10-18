@@ -7,6 +7,9 @@
 #include <Microsoft.UI.Windowing.h>
 
 #include "AppConfig.h"
+#include "PlaybackController.h"
+
+#include <filesystem>
 
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
@@ -316,8 +319,8 @@ namespace winrt::ScreenControl::implementation
         info.IsOpen(true);
         info.IsClosable(false);
         info.Severity(InfoBarSeverity::Informational);
-        info.Title(L"骨架阶段");
-        info.Message(L"HID 通信、素材库、视频/图片播放将在后续迭代接入。当前版本用于确认工程结构、Mica 背衬、主题与配置迁移。");
+        info.Title(L"当前进度");
+        info.Message(L"HID 发送与照片/视频播放已接入；素材导入（ffmpeg 转码）与实时预览将在后续迭代补齐。");
         controls.Children().Append(info);
 
         auto controlsCard = MakeCard(controls);
@@ -325,7 +328,173 @@ namespace winrt::ScreenControl::implementation
         body.Children().Append(controlsCard);
 
         page.Children().Append(body);
+
+        // ---------------- 素材与播放 ----------------
+        StackPanel media;
+        media.Spacing(10);
+
+        m_deviceText = TextBlock{};
+        m_deviceText.Text(Player().DeviceReady() ? L"设备：已连接" : L"设备：未连接");
+        media.Children().Append(m_deviceText);
+
+        m_statusText = TextBlock{};
+        m_statusText.Text(L"未在显示");
+        m_statusText.FontSize(12);
+        media.Children().Append(m_statusText);
+
+        Grid mediaRow;
+        mediaRow.ColumnSpacing(16);
+        mediaRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
+        mediaRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
+
+        StackPanel photoPanel;
+        photoPanel.Spacing(6);
+        TextBlock photoLabel;
+        photoLabel.Text(L"照片");
+        photoPanel.Children().Append(photoLabel);
+        ListView photoList;
+        photoList.Height(180);
+        PopulateMediaList(photoList,
+                          (AppConfigStore().AssetRoot() / L"photos").wstring(),
+                          L".jpg,.jpeg,.png,.bmp");
+        photoPanel.Children().Append(photoList);
+        Button playPhoto;
+        playPhoto.Content(box_value(L"播放选中的照片"));
+        playPhoto.Click([this, photoList](auto const&, RoutedEventArgs const&)
+        {
+            if (auto item = photoList.SelectedItem())
+            {
+                const std::wstring path = unbox_value<hstring>(item).c_str();
+                Player().Play(std::filesystem::path(path));
+            }
+        });
+        photoPanel.Children().Append(playPhoto);
+        Grid::SetColumn(photoPanel, 0);
+        mediaRow.Children().Append(photoPanel);
+
+        StackPanel videoPanel;
+        videoPanel.Spacing(6);
+        TextBlock videoLabel;
+        videoLabel.Text(L"视频");
+        videoPanel.Children().Append(videoLabel);
+        ListView videoList;
+        videoList.Height(180);
+        PopulateMediaList(videoList,
+                          (AppConfigStore().AssetRoot() / L"videos").wstring(),
+                          L".mp4,.avi,.mov,.mkv,.webm,.m4v");
+        videoPanel.Children().Append(videoList);
+        Button playVideo;
+        playVideo.Content(box_value(L"播放选中的视频"));
+        playVideo.Click([this, videoList](auto const&, RoutedEventArgs const&)
+        {
+            if (auto item = videoList.SelectedItem())
+            {
+                const std::wstring path = unbox_value<hstring>(item).c_str();
+                Player().Play(std::filesystem::path(path));
+            }
+        });
+        videoPanel.Children().Append(playVideo);
+        Grid::SetColumn(videoPanel, 1);
+        mediaRow.Children().Append(videoPanel);
+
+        media.Children().Append(mediaRow);
+
+        Button stopButton;
+        stopButton.Content(box_value(L"停止显示"));
+        stopButton.Click([this](auto const&, RoutedEventArgs const&) { Player().Stop(); });
+        media.Children().Append(stopButton);
+
+        page.Children().Append(MakeCard(media));
+
         return MakeScrollable(page);
+    }
+
+    void MainWindow::PopulateMediaList(ListView const& list, std::wstring const& directory,
+                                       std::wstring const& extensionsCsv)
+    {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        if (!fs::exists(directory, ec))
+        {
+            return;
+        }
+
+        auto matches = [&extensionsCsv](std::filesystem::path const& file)
+        {
+            const std::wstring ext = file.extension().wstring();
+            size_t start = 0;
+            while (start <= extensionsCsv.size())
+            {
+                const size_t comma = extensionsCsv.find(L',', start);
+                const std::wstring token = extensionsCsv.substr(
+                    start, comma == std::wstring::npos ? std::wstring::npos : comma - start);
+                if (!token.empty() && _wcsicmp(ext.c_str(), token.c_str()) == 0)
+                {
+                    return true;
+                }
+                if (comma == std::wstring::npos)
+                {
+                    break;
+                }
+                start = comma + 1;
+            }
+            return false;
+        };
+
+        for (auto const& entry : fs::directory_iterator(directory, ec))
+        {
+            if (!entry.is_regular_file() || !matches(entry.path()))
+            {
+                continue;
+            }
+            ListViewItem item;
+            item.Content(box_value(entry.path().filename().wstring()));
+            item.Tag(box_value(entry.path().wstring()));
+            list.Items().Append(item);
+        }
+    }
+
+    ::ScreenControl::Core::PlaybackController& MainWindow::Player()
+    {
+        if (!m_player)
+        {
+            m_player = std::make_unique<::ScreenControl::Core::PlaybackController>();
+            m_player->OpenDevice();
+
+            // 状态回调在工作线程触发，需封送到 UI 线程。
+            m_player->SetStatusCallback([this](std::wstring const& message)
+            {
+                auto dispatcher = DispatcherQueue();
+                if (!dispatcher)
+                {
+                    return;
+                }
+                const auto text = winrt::hstring(message);
+                dispatcher.TryEnqueue([this, text]()
+                {
+                    if (m_statusText)
+                    {
+                        m_statusText.Text(text);
+                    }
+                });
+            });
+        }
+        return *m_player;
+    }
+
+    void MainWindow::ShutdownPlayer() noexcept
+    {
+        if (m_player)
+        {
+            m_player->Stop();
+            m_player->CloseDevice();
+            m_player.reset();
+        }
+    }
+
+    MainWindow::~MainWindow()
+    {
+        ShutdownPlayer();
     }
 
     UIElement MainWindow::BuildSettingsPage()

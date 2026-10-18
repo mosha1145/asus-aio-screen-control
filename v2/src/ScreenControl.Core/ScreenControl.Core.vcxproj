@@ -47,7 +47,7 @@
   </ImportGroup>
 
   <PropertyGroup>
-    <IncludePath>$(MSBuildThisFileDirectory);$(IncludePath)</IncludePath>
+    <IncludePath>$(MSBuildThisFileDirectory);$(MSBuildThisFileDirectory)..\ScreenControl.Device;$(MSBuildThisFileDirectory)..\ScreenControl.Imaging;$(IncludePath)</IncludePath>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
@@ -78,6 +78,8 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="AppConfig.h" />
     <ClInclude Include="MinimalJson.h" />
+    <ClInclude Include="MediaDecoders.h" />
+    <ClInclude Include="PlaybackController.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -85,6 +87,8 @@
     </ClCompile>
     <ClCompile Include="AppConfig.cpp" />
     <ClCompile Include="MinimalJson.cpp" />
+    <ClCompile Include="MediaDecoders.cpp" />
+    <ClCompile Include="PlaybackController.cpp" />
   </ItemGroup>
 
   <!-- 依赖下层静态库 -->

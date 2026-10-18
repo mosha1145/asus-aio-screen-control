@@ -9,11 +9,16 @@
 #include "MainWindow.g.h"
 #include "NativeTheme.h"
 
+#include <memory>
+
+namespace ScreenControl::Core { class PlaybackController; }
+
 namespace winrt::ScreenControl::implementation
 {
     struct MainWindow : MainWindowT<MainWindow>
     {
         MainWindow();
+        ~MainWindow();
 
         int32_t MyProperty();
         void MyProperty(int32_t value);
@@ -32,9 +37,22 @@ namespace winrt::ScreenControl::implementation
         /// 当前窗口的原生 HWND（用于设置标题栏深色 / 系统菜单深色）。
         HWND GetHwnd() const noexcept;
 
+        /// 懒创建播放控制器（并尝试打开设备）。
+        ::ScreenControl::Core::PlaybackController& Player();
+        void ShutdownPlayer() noexcept;
+
+        /// 把素材目录里的文件填进 ListView。
+        void PopulateMediaList(winrt::Microsoft::UI::Xaml::Controls::ListView const& list,
+                               std::wstring const& directory,
+                               std::wstring const& extensionsCsv);
+
         winrt::Microsoft::UI::Xaml::Controls::Frame m_contentFrame{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::Grid m_titleBar{ nullptr };
         ::ScreenControl::AppTheme m_theme{ ::ScreenControl::AppTheme::System };
+
+        std::unique_ptr<::ScreenControl::Core::PlaybackController> m_player;
+        winrt::Microsoft::UI::Xaml::Controls::TextBlock m_statusText{ nullptr };
+        winrt::Microsoft::UI::Xaml::Controls::TextBlock m_deviceText{ nullptr };
     };
 }
 

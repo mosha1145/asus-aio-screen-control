@@ -77,6 +77,8 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="FrameGeometry.h" />
+    <ClInclude Include="FramePipeline.h" />
+    <ClInclude Include="JpegEncoder.h" />
     <ClInclude Include="RenderParams.h" />
   </ItemGroup>
   <ItemGroup>
@@ -84,6 +86,8 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="FrameGeometry.cpp" />
+    <ClCompile Include="FramePipeline.cpp" />
+    <ClCompile Include="JpegEncoder.cpp" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
