@@ -48,15 +48,37 @@ namespace ScreenControl::Core
         return m_device.State();
     }
 
+    namespace
+    {
+        /// 按需打开设备：控件操作时若设备尚未打开（例如启动时 InfoHub 占用，
+        /// 之后用户退出了它），这里再试一次，避免"控件没反应"。
+        bool EnsureDevice(::ScreenControl::Device::ScreenController& device)
+        {
+            if (device.IsOpen())
+            {
+                return true;
+            }
+            return device.Open();
+        }
+    }
+
     bool PlaybackController::SetBrightness(int percent)
     {
         if (percent < 0) { percent = 0; }
         if (percent > 100) { percent = 100; }
+        if (!EnsureDevice(m_device))
+        {
+            return false;
+        }
         return m_device.SetBrightness(static_cast<std::uint8_t>(percent));
     }
 
     bool PlaybackController::SetScreenPower(bool on)
     {
+        if (!EnsureDevice(m_device))
+        {
+            return false;
+        }
         return m_device.SetScreen(on);
     }
 
