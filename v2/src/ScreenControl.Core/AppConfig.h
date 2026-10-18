@@ -81,7 +81,17 @@ namespace ScreenControl::Core
         /// v2 配置位置（%LOCALAPPDATA%\AsusAioScreenControl\config.json）。
         static std::filesystem::path DefaultConfigPath();
 
-        explicit ConfigStore(std::filesystem::path configPath = DefaultConfigPath());
+        /// 传空路径时自动探测可写位置（LocalAppData -> exe 目录 -> 临时目录）。
+        explicit ConfigStore(std::filesystem::path configPath = {});
+
+        /// 实际会被使用的可写配置路径。
+        static std::filesystem::path ResolveWritablePath();
+
+        /// 目录是否可写（内部会创建目录并写一个探针文件）。
+        static bool IsDirectoryWritable(std::filesystem::path const& directory);
+
+        /// 当前 exe 所在目录。
+        static std::filesystem::path ExecutableDirectory();
 
         /// 加载配置。若 v2 配置不存在而 v1 配置存在，则执行一次性迁移。
         /// 返回值表示是否发生了迁移。

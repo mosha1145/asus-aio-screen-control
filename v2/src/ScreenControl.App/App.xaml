@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ApplicationDefinition。
+  作用：
+    1) 让 XAML 编译器生成 App.xaml.g.h（内含 AppT<App> 基类）与
+       XamlMetaDataProvider（页面类型注册表，MainWindow.xaml 的
+       InitializeComponent 在运行时要靠它解析类型）。
+    2) 提供 XamlControlsResources（WinUI 控件样式），否则控件无法实例化。
+-->
+<Application
+    x:Class="ScreenControl.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

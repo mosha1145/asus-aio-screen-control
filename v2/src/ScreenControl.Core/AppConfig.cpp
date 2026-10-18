@@ -166,6 +166,65 @@ namespace ScreenControl::Core
     ConfigStore::ConfigStore(std::filesystem::path configPath)
         : m_path(std::move(configPath))
     {
+        // 默认路径可能因为环境原因不可写（例如受限令牌、漫游配置只读、
+        // 或某些安全软件拦截 AppData 写入）。这里在真正使用前先探一次可写性，
+        // 不可写就回退到 exe 同目录，保证配置一定能落盘（便携模式）。
+        if (m_path.empty())
+        {
+            m_path = ResolveWritablePath();
+        }
+    }
+
+    std::filesystem::path ConfigStore::ExecutableDirectory()
+    {
+        wchar_t modulePath[MAX_PATH]{};
+        if (GetModuleFileNameW(nullptr, modulePath, MAX_PATH) == 0)
+        {
+            return {};
+        }
+        return std::filesystem::path(modulePath).parent_path();
+    }
+
+    bool ConfigStore::IsDirectoryWritable(std::filesystem::path const& directory)
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(directory, ec);
+        if (ec)
+        {
+            return false;
+        }
+
+        const std::filesystem::path probe = directory / L".dsh_write_probe";
+        {
+            std::ofstream test(probe, std::ios::binary | std::ios::trunc);
+            if (!test)
+            {
+                return false;
+            }
+            test << "probe";
+        }
+        std::filesystem::remove(probe, ec);
+        return true;
+    }
+
+    std::filesystem::path ConfigStore::ResolveWritablePath()
+    {
+        // 1) 首选：%LOCALAPPDATA%\AsusAioScreenControl\config.json
+        const std::filesystem::path preferred = DefaultConfigPath();
+        if (!preferred.parent_path().empty() && IsDirectoryWritable(preferred.parent_path()))
+        {
+            return preferred;
+        }
+
+        // 2) 回退：exe 同目录（便携模式）
+        const std::filesystem::path exeDir = ExecutableDirectory();
+        if (!exeDir.empty() && IsDirectoryWritable(exeDir))
+        {
+            return exeDir / L"config.json";
+        }
+
+        // 3) 最后兜底：临时目录（至少不会崩，重启后可能丢失）
+        return std::filesystem::temp_directory_path() / L"AsusAioScreenControl" / L"config.json";
     }
 
     std::filesystem::path ConfigStore::AssetRoot() const

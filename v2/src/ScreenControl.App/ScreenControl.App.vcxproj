@@ -148,6 +148,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="App.h" />
     <ClInclude Include="MainWindow.h" />
+    <ClInclude Include="NativeTheme.h" />
   </ItemGroup>
 
   <ItemGroup>
@@ -156,8 +157,37 @@
     </ClCompile>
     <ClCompile Include="App.xaml.cpp" />
     <ClCompile Include="MainWindow.cpp" />
+    <ClCompile Include="NativeTheme.cpp" />
+    <ClCompile Include="XamlGeneratedIncludes.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
   </ItemGroup>
+
+  <!--
+    命令行 MSBuild 下 XAML 编译器会生成这些代码，但不会自动加入 ClCompile/链接，
+    导致链接期缺符号（InitializeComponent / XamlMetaDataProvider / WinMain 等）。
+    注意：必须在 ClCompile 之前【动态】加入，不能在工程求值期静态加入 ——
+    XAML 步骤每次生成会重写/清理这些文件，静态项会因文件暂时不存在而编译失败。
+      · App.xaml.g.hpp        -> AppT::InitializeComponent 实现 + wWinMain 入口
+      · MainWindow.xaml.g.hpp -> MainWindowT::InitializeComponent/Connect/...
+      · XamlTypeInfo.g.cpp    -> 类型注册表
+      · XamlMetaDataProvider.cpp -> XamlMetaDataProvider 实现
+  -->
+  <Target Name="ScreenControlAddXamlGeneratedSources"
+          BeforeTargets="ClCompile"
+          DependsOnTargets="MarkupCompilePass1;MarkupCompilePass2">
+    <ItemGroup>
+      <ClCompile Include="$(IntDir)XamlTypeInfo.g.cpp" Condition="Exists('$(IntDir)XamlTypeInfo.g.cpp')">
+        <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      </ClCompile>
+      <ClCompile Include="$(IntDir)XamlTypeInfo.Impl.g.cpp" Condition="Exists('$(IntDir)XamlTypeInfo.Impl.g.cpp')">
+        <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      </ClCompile>
+      <ClCompile Include="$(MSBuildThisFileDirectory)Generated Files\XamlMetaDataProvider.cpp"
+                 Condition="Exists('$(MSBuildThisFileDirectory)Generated Files\XamlMetaDataProvider.cpp')">
+        <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      </ClCompile>
+    </ItemGroup>
+  </Target>
 
   <!-- 依赖下层静态库 -->
   <ItemGroup>

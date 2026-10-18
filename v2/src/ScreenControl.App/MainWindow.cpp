@@ -1,10 +1,12 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "MainWindow.h"
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
 #endif
 
 #include <Microsoft.UI.Windowing.h>
+
+#include "AppConfig.h"
 
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
@@ -15,6 +17,29 @@ namespace winrt::ScreenControl::implementation
 {
     namespace
     {
+        /// 全局配置（首次访问时加载，含 v1 -> v2 迁移）。主题等设置经它持久化。
+        ::ScreenControl::Core::ConfigStore& AppConfigStore()
+        {
+            static ::ScreenControl::Core::ConfigStore store = []()
+            {
+                ::ScreenControl::Core::ConfigStore s;
+                s.Load();
+                return s;
+            }();
+            return store;
+        }
+
+        /// 把页面内容包进可滚动容器。
+        /// 窗口变小时页面不会被裁剪，而是出现纵向滚动条。
+        ScrollViewer MakeScrollable(UIElement const& content)
+        {
+            ScrollViewer scroller;
+            scroller.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
+            scroller.HorizontalScrollBarVisibility(ScrollBarVisibility::Disabled);
+            scroller.Content(content);
+            return scroller;
+        }
+
         TextBlock MakeTitle(hstring const& text)
         {
             TextBlock block;
@@ -56,6 +81,12 @@ namespace winrt::ScreenControl::implementation
     {
         // 从 MainWindow.xaml 加载根容器（RootGrid）并注册窗口类型。
         InitializeComponent();
+
+        // 重要：m_titleBar / m_contentFrame 在头文件里初始化为 nullptr，
+        // 必须在这里先实例化，否则后续对它们调用任何成员都会导致
+        // 空引用访问冲突（0xC0000005）——这正是之前的启动崩溃原因。
+        m_titleBar = Grid{};
+        m_contentFrame = Frame{};
 
         // 根容器背景留空：一旦设了实色，Mica 就被盖住了。
         Grid root = RootGrid();
@@ -114,9 +145,11 @@ namespace winrt::ScreenControl::implementation
             }
         });
 
+        // 布局：标题栏独占第 0 行，NavigationView 只占第 1 行。
+        // 早前让 NavigationView 跨第 0~1 行，导致折叠面板的汉堡按钮/面板与
+        // 自定义标题栏区域重叠，折叠后显示错乱。分开后互不干扰。
         Grid::SetRow(m_titleBar, 0);
-        Grid::SetRow(nav, 0);
-        Grid::SetRowSpan(nav, 2);
+        Grid::SetRow(nav, 1);
         root.Children().Append(m_titleBar);
         root.Children().Append(nav);
 
@@ -125,6 +158,54 @@ namespace winrt::ScreenControl::implementation
         SetupBackdropAndTitleBar();
         NavigateTo(L"display");
         nav.SelectedItem(itemDisplay);
+
+        // 启动时按配置恢复主题（含「跟随系统」）。
+        m_theme = ::ScreenControl::NativeTheme::Parse(AppConfigStore().Data().appTheme);
+        ApplyTheme(m_theme, false);
+    }
+
+    HWND MainWindow::GetHwnd() const noexcept
+    {
+        if (auto appWindow = AppWindow())
+        {
+            return reinterpret_cast<HWND>(appWindow.Id().Value);
+        }
+        return nullptr;
+    }
+
+    void MainWindow::ApplyTheme(::ScreenControl::AppTheme theme, bool persist)
+    {
+        m_theme = theme;
+
+        // 1) XAML 层：设根元素的 RequestedTheme，WinUI 控件与 Mica 背衬一起切换。
+        //    Default = 跟随系统；Light / Dark 为显式覆盖。
+        if (auto root = Content().try_as<FrameworkElement>())
+        {
+            switch (theme)
+            {
+            case ::ScreenControl::AppTheme::Light:
+                root.RequestedTheme(ElementTheme::Light);
+                break;
+            case ::ScreenControl::AppTheme::Dark:
+                root.RequestedTheme(ElementTheme::Dark);
+                break;
+            default:
+                root.RequestedTheme(ElementTheme::Default);
+                break;
+            }
+        }
+
+        // 2) 原生层：标题栏深色 + Win32 系统菜单（标题栏右键菜单）深色。
+        //    这两处不受 XAML ElementTheme 影响，必须单独设置，否则会出现
+        //    「控件已变深色、标题栏右键菜单仍是浅色」的割裂。
+        ::ScreenControl::NativeTheme::ApplyAll(theme, GetHwnd());
+
+        // 3) 持久化
+        if (persist)
+        {
+            AppConfigStore().Data().appTheme = ::ScreenControl::NativeTheme::ToString(theme);
+            AppConfigStore().Save();
+        }
     }
 
     void MainWindow::SetupBackdropAndTitleBar()
@@ -244,7 +325,7 @@ namespace winrt::ScreenControl::implementation
         body.Children().Append(controlsCard);
 
         page.Children().Append(body);
-        return page;
+        return MakeScrollable(page);
     }
 
     UIElement MainWindow::BuildSettingsPage()
@@ -272,7 +353,35 @@ namespace winrt::ScreenControl::implementation
         themeChoice.Items().Append(box_value(L"跟随系统"));
         themeChoice.Items().Append(box_value(L"浅色"));
         themeChoice.Items().Append(box_value(L"深色"));
-        themeChoice.SelectedIndex(0);
+
+        // 先按当前主题回显选中项，再挂事件（避免设置选中项时触发一次多余的应用）。
+        int themeIndex = 0;
+        if (m_theme == ::ScreenControl::AppTheme::Light)
+        {
+            themeIndex = 1;
+        }
+        else if (m_theme == ::ScreenControl::AppTheme::Dark)
+        {
+            themeIndex = 2;
+        }
+        themeChoice.SelectedIndex(themeIndex);
+
+        themeChoice.SelectionChanged([this](IInspectable const& sender, SelectionChangedEventArgs const&)
+        {
+            auto radio = sender.try_as<RadioButtons>();
+            if (!radio)
+            {
+                return;
+            }
+            ::ScreenControl::AppTheme theme = ::ScreenControl::AppTheme::System;
+            switch (radio.SelectedIndex())
+            {
+            case 1: theme = ::ScreenControl::AppTheme::Light; break;
+            case 2: theme = ::ScreenControl::AppTheme::Dark; break;
+            default: theme = ::ScreenControl::AppTheme::System; break;
+            }
+            ApplyTheme(theme, true);
+        });
         general.Children().Append(themeChoice);
 
         TextBlock themeHint;
@@ -305,6 +414,6 @@ namespace winrt::ScreenControl::implementation
         deferred.Children().Append(smtcSwitch);
 
         page.Children().Append(MakeCard(deferred));
-        return page;
+        return MakeScrollable(page);
     }
 }

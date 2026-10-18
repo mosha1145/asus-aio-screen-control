@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  主窗口（x:Class="ScreenControl.MainWindow"）。
+  说明：本窗口只提供 XAML 根容器，使 XAML 编译器生成 MainWindow.xaml.g.h
+  （MainWindowT 基类 + InitializeComponent）；实际界面在 MainWindow.cpp 里
+  用 C++/WinRT 构建，再通过 Content(...) 挂到窗口上。
+  根容器背景留空，避免盖住 Mica 系统背衬。
+-->
+<Window
+    x:Class="ScreenControl.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="ASUS AIO Screen Control">
+
+    <Grid x:Name="RootGrid" Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+    </Grid>
+</Window>
