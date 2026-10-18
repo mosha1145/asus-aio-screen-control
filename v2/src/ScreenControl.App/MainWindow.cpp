@@ -165,8 +165,71 @@ namespace winrt::ScreenControl::implementation
         // 启动时按配置恢复主题（含「跟随系统」）。
         m_theme = ::ScreenControl::NativeTheme::Parse(AppConfigStore().Data().appTheme);
         ApplyTheme(m_theme, false);
+
+        // 电源 / 会话事件（睡眠、关机、注销）与窗口关闭处理。
+        SetupPowerEvents();
     }
 
+    void MainWindow::SetupPowerEvents()
+    {
+        HWND hwnd = GetHwnd();
+        if (hwnd == nullptr)
+        {
+            return;
+        }
+
+        // 统一的关屏动作：受设置页「电源联动」总开关与各事件独立开关控制。
+        auto turnOffScreen = [this]()
+        {
+            if (m_player)
+            {
+                m_player->SetScreenPower(false);
+            }
+        };
+
+        ::ScreenControl::PowerMonitor::Handlers handlers;
+
+        handlers.suspend = [this, turnOffScreen]()
+        {
+            auto const& cfg = AppConfigStore().Data();
+            if (cfg.powerActions && cfg.powerSleep)
+            {
+                turnOffScreen();
+            }
+        };
+
+        handlers.shutdown = [this, turnOffScreen]()
+        {
+            auto const& cfg = AppConfigStore().Data();
+            if (cfg.powerActions && cfg.powerShutdown)
+            {
+                turnOffScreen();
+            }
+        };
+
+        handlers.logoff = [this, turnOffScreen]()
+        {
+            auto const& cfg = AppConfigStore().Data();
+            if (cfg.powerActions && cfg.powerLogout)
+            {
+                turnOffScreen();
+            }
+        };
+
+        m_powerMonitor.Start(hwnd, handlers);
+
+        // 关闭程序时关屏（对应 v1 的 power_close_app）
+        Closed([this, turnOffScreen](auto&&, auto&&)
+        {
+            auto const& cfg = AppConfigStore().Data();
+            if (cfg.powerActions && cfg.powerCloseApp)
+            {
+                turnOffScreen();
+            }
+            m_powerMonitor.Stop();
+            ShutdownPlayer();
+        });
+    }
     HWND MainWindow::GetHwnd() const noexcept
     {
         if (auto appWindow = AppWindow())
@@ -362,9 +425,12 @@ namespace winrt::ScreenControl::implementation
         playPhoto.Content(box_value(L"播放选中的照片"));
         playPhoto.Click([this, photoList](auto const&, RoutedEventArgs const&)
         {
-            if (auto item = photoList.SelectedItem())
+            // SelectedItem() 返回的是 ListViewItem 本身，不是 hstring。
+            // 之前直接 unbox_value<hstring>(item) 类型不匹配抛异常 -> 崩溃。
+            // 路径存在 Tag 里，所以先转成 ListViewItem 再取 Tag。
+            if (auto item = photoList.SelectedItem().try_as<ListViewItem>())
             {
-                const std::wstring path = unbox_value<hstring>(item).c_str();
+                const std::wstring path = unbox_value<hstring>(item.Tag()).c_str();
                 Player().Play(std::filesystem::path(path));
             }
         });
@@ -387,9 +453,9 @@ namespace winrt::ScreenControl::implementation
         playVideo.Content(box_value(L"播放选中的视频"));
         playVideo.Click([this, videoList](auto const&, RoutedEventArgs const&)
         {
-            if (auto item = videoList.SelectedItem())
+            if (auto item = videoList.SelectedItem().try_as<ListViewItem>())
             {
-                const std::wstring path = unbox_value<hstring>(item).c_str();
+                const std::wstring path = unbox_value<hstring>(item.Tag()).c_str();
                 Player().Play(std::filesystem::path(path));
             }
         });

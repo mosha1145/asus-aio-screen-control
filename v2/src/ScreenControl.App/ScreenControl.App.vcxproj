@@ -149,6 +149,7 @@
     <ClInclude Include="App.h" />
     <ClInclude Include="MainWindow.h" />
     <ClInclude Include="NativeTheme.h" />
+    <ClInclude Include="PowerMonitor.h" />
   </ItemGroup>
 
   <ItemGroup>
@@ -158,6 +159,7 @@
     <ClCompile Include="App.xaml.cpp" />
     <ClCompile Include="MainWindow.cpp" />
     <ClCompile Include="NativeTheme.cpp" />
+    <ClCompile Include="PowerMonitor.cpp" />
     <ClCompile Include="XamlGeneratedIncludes.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
   </ItemGroup>

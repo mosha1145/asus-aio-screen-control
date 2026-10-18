@@ -8,6 +8,7 @@
 
 #include "MainWindow.g.h"
 #include "NativeTheme.h"
+#include "PowerMonitor.h"
 
 #include <memory>
 
@@ -41,6 +42,9 @@ namespace winrt::ScreenControl::implementation
         ::ScreenControl::Core::PlaybackController& Player();
         void ShutdownPlayer() noexcept;
 
+        /// 注册电源 / 会话事件（睡眠、关机、注销）与窗口关闭处理。
+        void SetupPowerEvents();
+
         /// 把素材目录里的文件填进 ListView。
         void PopulateMediaList(winrt::Microsoft::UI::Xaml::Controls::ListView const& list,
                                std::wstring const& directory,
@@ -53,6 +57,7 @@ namespace winrt::ScreenControl::implementation
         std::unique_ptr<::ScreenControl::Core::PlaybackController> m_player;
         winrt::Microsoft::UI::Xaml::Controls::TextBlock m_statusText{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::TextBlock m_deviceText{ nullptr };
+        ::ScreenControl::PowerMonitor m_powerMonitor;
     };
 }
 
