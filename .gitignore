@@ -19,7 +19,3 @@ assets/videos/
 Thumbs.db
 Desktop.ini
 
-# WinUI3 冒烟测试的构建产物
-winui3-smoke/x64/
-winui3-smoke/obj/
-winui3-smoke/.vs/

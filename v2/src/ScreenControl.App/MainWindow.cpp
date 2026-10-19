@@ -119,7 +119,13 @@ namespace winrt::ScreenControl::implementation
         NavigationView nav;
         nav.IsBackButtonVisible(NavigationViewBackButtonVisible::Collapsed);
         nav.IsSettingsVisible(false);
-        nav.PaneDisplayMode(NavigationViewPaneDisplayMode::Left);
+        // 官方 NavigationView 的自适应行为：
+        //   宽度 >= ExpandedModeThresholdWidth  -> Left（内联推拉）
+        //   Compact <= 宽度 < Expanded          -> Compact
+        //   宽度 <  CompactModeThresholdWidth   -> Minimal（面板悬浮在内容之上）
+        nav.PaneDisplayMode(NavigationViewPaneDisplayMode::Auto);
+        nav.CompactModeThresholdWidth(641.0);
+        nav.ExpandedModeThresholdWidth(1008.0);
         nav.OpenPaneLength(216);
 
         NavigationViewItem itemDisplay;
@@ -166,10 +172,48 @@ namespace winrt::ScreenControl::implementation
         m_theme = ::ScreenControl::NativeTheme::Parse(AppConfigStore().Data().appTheme);
         ApplyTheme(m_theme, false);
 
+        // 恢复上次的显示参数与屏幕开关状态
+        ApplyPersistedDeviceState();
+
         // 电源 / 会话事件（睡眠、关机、注销）与窗口关闭处理。
         SetupPowerEvents();
     }
 
+    void MainWindow::ApplyPersistedDeviceState()
+    {
+        auto& config = AppConfigStore().Data();
+
+        auto params = Player().Params();
+        if (config.fitMode == L"cover")
+        {
+            params.fitMode = ::ScreenControl::Imaging::FitMode::Cover;
+        }
+        else if (config.fitMode == L"stretch")
+        {
+            params.fitMode = ::ScreenControl::Imaging::FitMode::Stretch;
+        }
+        else
+        {
+            params.fitMode = ::ScreenControl::Imaging::FitMode::Contain;
+        }
+
+        switch (config.rotation)
+        {
+        case 90:  params.rotation = ::ScreenControl::Imaging::Rotation::Deg90; break;
+        case 180: params.rotation = ::ScreenControl::Imaging::Rotation::Deg180; break;
+        case 270: params.rotation = ::ScreenControl::Imaging::Rotation::Deg270; break;
+        default:  params.rotation = ::ScreenControl::Imaging::Rotation::Deg0; break;
+        }
+
+        Player().SetParams(params);
+        Player().SetPhotoFps(config.photoFps);
+
+        // 恢复屏幕状态：用户最后一次设定的是开就开、是关就关。
+        // 这样即便上次退出时被「电源联动」关了屏，本次启动也会恢复成用户设定，
+        // 不需要再手动点两次开关。
+        Player().SetBrightness(config.brightness);
+        Player().SetScreenPower(config.screenOn);
+    }
     void MainWindow::SetupPowerEvents()
     {
         HWND hwnd = GetHwnd();
@@ -266,7 +310,24 @@ namespace winrt::ScreenControl::implementation
         //    「控件已变深色、标题栏右键菜单仍是浅色」的割裂。
         ::ScreenControl::NativeTheme::ApplyAll(theme, GetHwnd());
 
-        // 3) 持久化
+        // 3) 标题栏系统按钮的前景色必须自己跟随主题。
+        //    ExtendsContentIntoTitleBar 之后三个按钮（最小化/最大化/关闭）由我们自己着色，
+        //    在浅色主题下如果仍是白色前景，就会出现「按钮看不见、只有悬停才显形」的问题。
+        if (auto appWindow = AppWindow())
+        {
+            if (auto titleBar = appWindow.TitleBar())
+            {
+                const bool dark = ::ScreenControl::NativeTheme::ResolveIsDark(theme);
+                auto const foreground = dark ? Windows::UI::Colors::White() : Windows::UI::Colors::Black();
+
+                titleBar.ButtonForegroundColor(foreground);
+                titleBar.ButtonInactiveForegroundColor(foreground);
+                titleBar.ButtonHoverForegroundColor(foreground);
+                titleBar.ButtonPressedForegroundColor(foreground);
+            }
+        }
+
+        // 4) 持久化
         if (persist)
         {
             AppConfigStore().Data().appTheme = ::ScreenControl::NativeTheme::ToString(theme);
@@ -346,12 +407,15 @@ namespace winrt::ScreenControl::implementation
 
         ToggleSwitch screenSwitch;
         screenSwitch.Header(box_value(L"屏幕开关"));
-        screenSwitch.IsOn(true);
-        // 屏幕开关 -> HID 控制命令 0x80000110（此前完全没接线）
+        // 初值来自配置；先设状态再挂事件，避免初始化时触发一次多余的命令。
+        screenSwitch.IsOn(AppConfigStore().Data().screenOn);
         screenSwitch.Toggled([this](IInspectable const& sender, RoutedEventArgs const&)
         {
             if (auto toggle = sender.try_as<ToggleSwitch>())
             {
+                // 记住用户设定，下次启动按此恢复（与电源联动关屏互不覆盖）
+                AppConfigStore().Data().screenOn = toggle.IsOn();
+                AppConfigStore().Save();
                 Player().SetScreenPower(toggle.IsOn());
             }
         });
@@ -365,12 +429,17 @@ namespace winrt::ScreenControl::implementation
         Slider brightness;
         brightness.Minimum(0);
         brightness.Maximum(100);
-        brightness.Value(50);
+        brightness.Value(AppConfigStore().Data().brightness);
         brightnessRow.Children().Append(brightness);
-        // 亮度 -> HID 控制命令 0x80000112（此前完全没接线）
+        // 拖动时实时下发命令；松手（失焦）时才写配置，避免拖一次写上百次文件。
         brightness.ValueChanged([this](IInspectable const&, Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
         {
             Player().SetBrightness(static_cast<int>(args.NewValue()));
+        });
+        brightness.LostFocus([this, brightness](IInspectable const&, RoutedEventArgs const&)
+        {
+            AppConfigStore().Data().brightness = static_cast<int>(brightness.Value());
+            AppConfigStore().Save();
         });
         controls.Children().Append(brightnessRow);
 
@@ -379,7 +448,10 @@ namespace winrt::ScreenControl::implementation
         fitMode.Items().Append(box_value(L"适应 · contain"));
         fitMode.Items().Append(box_value(L"填充 · cover"));
         fitMode.Items().Append(box_value(L"拉伸 · stretch"));
-        fitMode.SelectedIndex(0);
+        {
+            const std::wstring stored = AppConfigStore().Data().fitMode;
+            fitMode.SelectedIndex(stored == L"cover" ? 1 : (stored == L"stretch" ? 2 : 0));
+        }
         fitMode.SelectionChanged([this, fitMode](IInspectable const&, SelectionChangedEventArgs const&)
         {
             auto params = Player().Params();
@@ -390,6 +462,10 @@ namespace winrt::ScreenControl::implementation
             default: params.fitMode = ::ScreenControl::Imaging::FitMode::Contain; break;
             }
             Player().SetParams(params);
+            AppConfigStore().Data().fitMode =
+                fitMode.SelectedIndex() == 1 ? L"cover"
+                : (fitMode.SelectedIndex() == 2 ? L"stretch" : L"contain");
+            AppConfigStore().Save();
         });
         controls.Children().Append(fitMode);
 
@@ -399,7 +475,10 @@ namespace winrt::ScreenControl::implementation
         rotation.Items().Append(box_value(L"90°"));
         rotation.Items().Append(box_value(L"180°"));
         rotation.Items().Append(box_value(L"270°"));
-        rotation.SelectedIndex(0);
+        {
+            const int storedRotation = AppConfigStore().Data().rotation;
+            rotation.SelectedIndex(storedRotation == 90 ? 1 : (storedRotation == 180 ? 2 : (storedRotation == 270 ? 3 : 0)));
+        }
         rotation.SelectionChanged([this, rotation](IInspectable const&, SelectionChangedEventArgs const&)
         {
             auto params = Player().Params();
@@ -411,6 +490,10 @@ namespace winrt::ScreenControl::implementation
             default: params.rotation = ::ScreenControl::Imaging::Rotation::Deg0; break;
             }
             Player().SetParams(params);
+            AppConfigStore().Data().rotation =
+                rotation.SelectedIndex() == 1 ? 90
+                : (rotation.SelectedIndex() == 2 ? 180 : (rotation.SelectedIndex() == 3 ? 270 : 0));
+            AppConfigStore().Save();
         });
         controls.Children().Append(rotation);
 
@@ -616,28 +699,56 @@ namespace winrt::ScreenControl::implementation
         autoStart.OnContent(box_value(L"开启"));
         general.Children().Append(autoStart);
 
-        TextBlock themeLabel;
-        themeLabel.Text(L"界面主题");
-        general.Children().Append(themeLabel);
+        // 主题：参考系统设置页的做法 —— 可展开条目，标题行左侧图标 + 名称、
+        // 右侧显示当前选项；展开后三选一。顺序按参考图：浅色 / 深色 / 使用系统设置。
+        auto themeLabelOf = [](::ScreenControl::AppTheme value) -> wchar_t const*
+        {
+            switch (value)
+            {
+            case ::ScreenControl::AppTheme::Light: return L"浅色";
+            case ::ScreenControl::AppTheme::Dark: return L"深色";
+            default: return L"使用系统设置";
+            }
+        };
+
+        TextBlock themeValue;
+        themeValue.FontSize(12);
+        themeValue.VerticalAlignment(VerticalAlignment::Center);
+        themeValue.Text(themeLabelOf(m_theme));
+
+        Grid themeHeader;
+        themeHeader.ColumnSpacing(12);
+        themeHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+        themeHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
+        themeHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+
+        FontIcon themeIcon;
+        themeIcon.Glyph(L"\xE790");
+        themeIcon.FontSize(16);
+        themeIcon.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(themeIcon, 0);
+        themeHeader.Children().Append(themeIcon);
+
+        TextBlock themeTitle;
+        themeTitle.Text(L"应用主题");
+        themeTitle.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(themeTitle, 1);
+        themeHeader.Children().Append(themeTitle);
+
+        Grid::SetColumn(themeValue, 2);
+        themeHeader.Children().Append(themeValue);
 
         RadioButtons themeChoice;
-        themeChoice.Items().Append(box_value(L"跟随系统"));
         themeChoice.Items().Append(box_value(L"浅色"));
         themeChoice.Items().Append(box_value(L"深色"));
+        themeChoice.Items().Append(box_value(L"使用系统设置"));
 
-        // 先按当前主题回显选中项，再挂事件（避免设置选中项时触发一次多余的应用）。
-        int themeIndex = 0;
-        if (m_theme == ::ScreenControl::AppTheme::Light)
-        {
-            themeIndex = 1;
-        }
-        else if (m_theme == ::ScreenControl::AppTheme::Dark)
-        {
-            themeIndex = 2;
-        }
-        themeChoice.SelectedIndex(themeIndex);
+        // 先回显再挂事件，避免初始化时触发一次多余的应用。
+        themeChoice.SelectedIndex(
+            m_theme == ::ScreenControl::AppTheme::Light ? 0
+            : (m_theme == ::ScreenControl::AppTheme::Dark ? 1 : 2));
 
-        themeChoice.SelectionChanged([this](IInspectable const& sender, SelectionChangedEventArgs const&)
+        themeChoice.SelectionChanged([this, themeValue, themeLabelOf](IInspectable const& sender, SelectionChangedEventArgs const&)
         {
             auto radio = sender.try_as<RadioButtons>();
             if (!radio)
@@ -647,20 +758,21 @@ namespace winrt::ScreenControl::implementation
             ::ScreenControl::AppTheme theme = ::ScreenControl::AppTheme::System;
             switch (radio.SelectedIndex())
             {
-            case 1: theme = ::ScreenControl::AppTheme::Light; break;
-            case 2: theme = ::ScreenControl::AppTheme::Dark; break;
+            case 0: theme = ::ScreenControl::AppTheme::Light; break;
+            case 1: theme = ::ScreenControl::AppTheme::Dark; break;
             default: theme = ::ScreenControl::AppTheme::System; break;
             }
             ApplyTheme(theme, true);
+            themeValue.Text(themeLabelOf(theme));
         });
-        general.Children().Append(themeChoice);
 
-        TextBlock themeHint;
-        themeHint.Text(L"仅深色 / 浅色 / 跟随系统，Mica 背衬会随主题自动调整色调。");
-        themeHint.FontSize(12);
-        themeHint.Foreground(Application::Current().Resources()
-                                 .Lookup(box_value(L"TextFillColorTertiaryBrush")).as<Brush>());
-        general.Children().Append(themeHint);
+        Expander themeExpander;
+        themeExpander.HorizontalAlignment(HorizontalAlignment::Stretch);
+        themeExpander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+        themeExpander.Header(themeHeader);
+        themeExpander.Content(themeChoice);
+        general.Children().Append(themeExpander);
+
 
         page.Children().Append(MakeCard(general));
 

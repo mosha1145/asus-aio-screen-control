@@ -45,6 +45,9 @@ namespace winrt::ScreenControl::implementation
         /// 注册电源 / 会话事件（睡眠、关机、注销）与窗口关闭处理。
         void SetupPowerEvents();
 
+        /// 启动时把配置里的显示参数与屏幕状态应用到设备。
+        void ApplyPersistedDeviceState();
+
         /// 把素材目录里的文件填进 ListView。
         void PopulateMediaList(winrt::Microsoft::UI::Xaml::Controls::ListView const& list,
                                std::wstring const& directory,
