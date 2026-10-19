@@ -873,9 +873,6 @@ namespace winrt::ScreenControl::implementation
         page.Children().Append(themeExpander);
 
         // ---------------- 电源联动（参考系统设置页：顶栏总开关 + 子项） ----------------
-        StackPanel powerSection;
-        powerSection.Spacing(4);
-
         auto& config = AppConfigStore().Data();
 
         // 子项容器：总开关关闭时整体置灰
@@ -977,7 +974,7 @@ namespace winrt::ScreenControl::implementation
 
         // 总开关关闭时子项灰显（与系统设置页一致）
         powerItems.IsEnabled(config.powerActions);
-        powerMaster.Toggled([this, &powerItems](IInspectable const& sender, RoutedEventArgs const&)
+        powerMaster.Toggled([this, powerItems](IInspectable const& sender, RoutedEventArgs const&)
         {
             if (auto control = sender.try_as<ToggleSwitch>())
             {
@@ -987,9 +984,9 @@ namespace winrt::ScreenControl::implementation
             }
         });
 
-        powerSection.Children().Append(powerHeader);
-        powerSection.Children().Append(powerItems);
-
+        // 注意：powerHeader 与 powerItems 只能各有一个父节点。
+        // 之前先把它们塞进 powerSection，随后又设为 Expander 的 Header/Content，
+        // 同一个 UIElement 被挂到两处 -> XAML 抛 E_INVALIDARG（"参数错误"）导致闪退。
         Expander powerExpander;
         powerExpander.HorizontalAlignment(HorizontalAlignment::Stretch);
         powerExpander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
