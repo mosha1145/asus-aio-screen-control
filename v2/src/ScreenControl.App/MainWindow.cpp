@@ -15,7 +15,9 @@
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
 #include <winrt/Windows.Graphics.Imaging.h>
+#include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #include <functional>
+#include <memory>
 
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
@@ -96,6 +98,12 @@ namespace winrt::ScreenControl::implementation
         // 空引用访问冲突（0xC0000005）——这正是之前的启动崩溃原因。
         m_titleBar = Grid{};
         m_contentFrame = Frame{};
+
+        // 页面切换动画：NavigationView 默认使用的入场过渡
+        // （Frame 直接换 Content 不会自动播放，需要挂 ContentTransitions）。
+        Microsoft::UI::Xaml::Media::Animation::EntranceThemeTransition entrance;
+        entrance.FromVerticalOffset(20);
+        m_contentFrame.ContentTransitions().Append(entrance);
 
         // 根容器背景留空：一旦设了实色，Mica 就被盖住了。
         Grid root = RootGrid();
@@ -220,6 +228,84 @@ namespace winrt::ScreenControl::implementation
         // 不需要再手动点两次开关。
         Player().SetBrightness(config.brightness);
         Player().SetScreenPower(config.screenOn);
+    }
+    UIElement MainWindow::MakeSettingsCard(wchar_t const* glyph, hstring const& title,
+                                           UIElement const& trailing, UIElement const& body)
+    {
+        auto resources = Application::Current().Resources();
+
+        Border card;
+        card.Background(resources.Lookup(box_value(L"CardBackgroundFillColorDefaultBrush")).as<Brush>());
+        card.BorderBrush(resources.Lookup(box_value(L"CardStrokeColorDefaultBrush")).as<Brush>());
+        card.BorderThickness(Thickness{ 1, 1, 1, 1 });
+        card.CornerRadius(CornerRadius{ 8, 8, 8, 8 });
+        card.Padding(Thickness{ 16, 0, 16, 0 });
+
+        StackPanel root;
+        root.Spacing(0);
+
+        // 标题行：图标 | 标题 | 右侧内容 | 展开箭头
+        Grid header;
+        header.MinHeight(54);
+        header.ColumnSpacing(16);
+        header.HorizontalAlignment(HorizontalAlignment::Stretch);
+        header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+        header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
+        header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+        header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+
+        FontIcon icon;
+        icon.Glyph(glyph);
+        icon.FontSize(16);
+        icon.HorizontalAlignment(HorizontalAlignment::Center);
+        icon.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(icon, 0);
+        header.Children().Append(icon);
+
+        TextBlock titleBlock;
+        titleBlock.Text(title);
+        titleBlock.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(titleBlock, 1);
+        header.Children().Append(titleBlock);
+
+        if (auto element = trailing.try_as<FrameworkElement>())
+        {
+            element.VerticalAlignment(VerticalAlignment::Center);
+            Grid::SetColumn(element, 2);
+            header.Children().Append(element);
+        }
+
+        // 展开箭头（无边框按钮）
+        Button chevronButton;
+        chevronButton.Background(SolidColorBrush{ Windows::UI::Colors::Transparent() });
+        chevronButton.BorderThickness(Thickness{ 0, 0, 0, 0 });
+        chevronButton.Padding(Thickness{ 8, 4, 8, 4 });
+        chevronButton.VerticalAlignment(VerticalAlignment::Center);
+        FontIcon chevron;
+        chevron.Glyph(L"\xE70D");   // ChevronDown
+        chevron.FontSize(12);
+        chevronButton.Content(chevron);
+        Grid::SetColumn(chevronButton, 3);
+        header.Children().Append(chevronButton);
+
+        // 内容区（默认折叠）
+        ContentControl bodyHost;
+        bodyHost.Content(body);
+        bodyHost.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+        bodyHost.Visibility(Visibility::Collapsed);
+
+        auto expanded = std::make_shared<bool>(false);
+        chevronButton.Click([chevron, bodyHost, expanded](IInspectable const&, RoutedEventArgs const&)
+        {
+            *expanded = !*expanded;
+            bodyHost.Visibility(*expanded ? Visibility::Visible : Visibility::Collapsed);
+            chevron.Glyph(*expanded ? L"\xE70E" : L"\xE70D");   // Up / Down
+        });
+
+        root.Children().Append(header);
+        root.Children().Append(bodyHost);
+        card.Child(root);
+        return card;
     }
     void MainWindow::ApplyThemeColor(bool tufGaming)
     {
@@ -908,18 +994,13 @@ namespace winrt::ScreenControl::implementation
             themeValue.Text(themeLabelOf(theme));
         });
 
-        Expander themeExpander;
-        themeExpander.HorizontalAlignment(HorizontalAlignment::Stretch);
-        themeExpander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-        themeExpander.Header(themeHeader);
-        themeExpander.Content(themeChoice);
 
         // 「常规」与「个性化」拆成两张卡：开机自启属于启动行为，主题属于外观，不应混在一起。
         page.Children().Append(MakeCard(general));
 
         // Expander 自身就是一张卡片，不再额外套一层 MakeCard，
         // 否则会出现双层边框与多余内边距（也就是"多包了一层"）。
-        page.Children().Append(themeExpander);
+        page.Children().Append(MakeSettingsCard(L"\xE706", L"应用主题", themeValue, themeChoice));
 
         // ---------------- 主题色 ----------------
         auto& config = AppConfigStore().Data();
@@ -934,28 +1015,6 @@ namespace winrt::ScreenControl::implementation
         colorValue.VerticalAlignment(VerticalAlignment::Center);
         colorValue.Text(colorLabelOf(config.themeColor));
 
-        Grid colorHeader;
-        colorHeader.ColumnSpacing(12);
-        colorHeader.HorizontalAlignment(HorizontalAlignment::Stretch);
-        colorHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-        colorHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
-        colorHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-
-        FontIcon colorIcon;
-        colorIcon.Glyph(L"\xE790");   // 画刷图标（与参考图一致）
-        colorIcon.FontSize(16);
-        colorIcon.VerticalAlignment(VerticalAlignment::Center);
-        Grid::SetColumn(colorIcon, 0);
-        colorHeader.Children().Append(colorIcon);
-
-        TextBlock colorTitle;
-        colorTitle.Text(L"主题色");
-        colorTitle.VerticalAlignment(VerticalAlignment::Center);
-        Grid::SetColumn(colorTitle, 1);
-        colorHeader.Children().Append(colorTitle);
-
-        Grid::SetColumn(colorValue, 2);
-        colorHeader.Children().Append(colorValue);
 
         RadioButtons colorChoice;
         colorChoice.Items().Append(box_value(L"TUF GAMING（#FF9E1B）"));
@@ -975,12 +1034,7 @@ namespace winrt::ScreenControl::implementation
             colorValue.Text(colorLabelOf(value));
         });
 
-        Expander colorExpander;
-        colorExpander.HorizontalAlignment(HorizontalAlignment::Stretch);
-        colorExpander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-        colorExpander.Header(colorHeader);
-        colorExpander.Content(colorChoice);
-        page.Children().Append(colorExpander);
+        page.Children().Append(MakeSettingsCard(L"\xE790", L"主题色", colorValue, colorChoice));
 
         // ---------------- 智能关屏（顶栏总开关 + 子项） ----------------
 
@@ -1076,12 +1130,7 @@ namespace winrt::ScreenControl::implementation
         // 注意：powerHeader 与 powerItems 只能各有一个父节点。
         // 之前先把它们塞进 powerSection，随后又设为 Expander 的 Header/Content，
         // 同一个 UIElement 被挂到两处 -> XAML 抛 E_INVALIDARG（"参数错误"）导致闪退。
-        Expander powerExpander;
-        powerExpander.HorizontalAlignment(HorizontalAlignment::Stretch);
-        powerExpander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-        powerExpander.Header(powerHeader);
-        powerExpander.Content(powerItems);
-        page.Children().Append(powerExpander);
+        page.Children().Append(MakeSettingsCard(L"\xE7E8", L"智能关屏", powerMaster, powerItems));
 
         StackPanel deferred;
         deferred.Spacing(12);

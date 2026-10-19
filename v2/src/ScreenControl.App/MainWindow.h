@@ -51,6 +51,15 @@ namespace winrt::ScreenControl::implementation
         /// 应用主题色（TUF GAMING 橙 / 系统强调色）。
         void ApplyThemeColor(bool tufGaming);
 
+        /// 构建一张可折叠的设置卡片（自绘，替代 Expander 以便精确控制对齐与高度）。
+        /// glyph: 左侧图标；title: 标题；trailing: 标题行右侧元素（可为 nullptr）；
+        /// body: 展开后显示的内容。
+        winrt::Microsoft::UI::Xaml::UIElement MakeSettingsCard(
+            wchar_t const* glyph,
+            winrt::hstring const& title,
+            winrt::Microsoft::UI::Xaml::UIElement const& trailing,
+            winrt::Microsoft::UI::Xaml::UIElement const& body);
+
         /// 把素材目录里的文件填进 ListView。
         void PopulateMediaList(winrt::Microsoft::UI::Xaml::Controls::ListView const& list,
                                std::wstring const& directory,
