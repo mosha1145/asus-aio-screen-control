@@ -65,8 +65,11 @@ namespace ScreenControl::Core
         /// 播放指定素材（照片或视频自动识别）。会先停止当前播放。
         bool Play(std::filesystem::path const& path);
 
-        /// 停止播放（不关闭设备）。
+        /// 停止播放（不关闭设备），会等待工作线程结束。
         void Stop();
+
+        /// 只置停止标志、不等待工作线程：用于进程退出路径，避免卡在 join 上。
+        void RequestStop() noexcept;
 
         bool IsPlaying() const noexcept { return m_playing.load(); }
 

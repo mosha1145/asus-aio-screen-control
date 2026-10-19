@@ -340,12 +340,20 @@ namespace winrt::ScreenControl::implementation
             {
                 turnOffScreen();
             }
-            m_powerMonitor.Stop();
-            ShutdownPlayer();
 
-            // 显式退出进程：否则窗口关闭后线程/句柄可能残留，
-            // 继续占着 HID，设备也无法按固件超时回到自带动画。
-            Application::Current().Exit();
+            m_powerMonitor.Stop();
+
+            // 关键：不要在这里做「优雅关闭」。
+            // ShutdownPlayer() 会 Stop() -> join 工作线程，而线程可能正卡在
+            // WriteFile 上（设备忙 / 已拔掉），join 不返回 -> 关闭流程卡住 ->
+            // 进程带着 HID 句柄残留 -> 设备一直停在最后一帧，也不会按固件超时
+            // 回到自带动画；之后再开官方 InfoHub，刚点亮就被我们残留的命令干扰。
+            // 直接把播放器停掉并结束进程，由操作系统立即回收全部句柄。
+            if (m_player)
+            {
+                m_player->RequestStop();   // 只置停止标志，不等待线程
+            }
+            ExitProcess(0);
         });
     }
     HWND MainWindow::GetHwnd() const noexcept
@@ -863,6 +871,7 @@ namespace winrt::ScreenControl::implementation
 
         // 开机自启动：左侧文本、右侧开关（与系统设置页的条目一致，开关不显示文字）
         ToggleSwitch autoStart;
+        autoStart.MinWidth(0);
         autoStart.OnContent(nullptr);
         autoStart.OffContent(nullptr);
         autoStart.VerticalAlignment(VerticalAlignment::Center);
@@ -1030,6 +1039,7 @@ namespace winrt::ScreenControl::implementation
 
         ToggleSwitch powerMaster;
         powerMaster.IsOn(config.powerActions);
+        powerMaster.MinWidth(0);
         powerMaster.OnContent(nullptr);
         powerMaster.OffContent(nullptr);
         powerMaster.VerticalAlignment(VerticalAlignment::Center);

@@ -210,6 +210,16 @@ namespace ScreenControl::Core
         }
     }
 
+    void PlaybackController::RequestStop() noexcept
+    {
+        {
+            std::lock_guard lock(m_stopMutex);
+            m_stopRequested = true;
+        }
+        m_stopCv.notify_all();
+        m_running.store(false);
+        m_playing.store(false);
+    }
     void PlaybackController::SleepUntil(std::chrono::steady_clock::time_point deadline) const
     {
         // 用条件变量等待，停止请求可以立即打断，避免 Stop() 卡在 sleep 上。
