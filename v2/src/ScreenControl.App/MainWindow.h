@@ -53,6 +53,9 @@ namespace winrt::ScreenControl::implementation
                                std::wstring const& directory,
                                std::wstring const& extensionsCsv);
 
+        /// 用一帧 BGRA 像素刷新预览图（必须在 UI 线程调用）。
+        void UpdatePreview(std::vector<std::uint8_t> const& pixels, int width, int height);
+
         winrt::Microsoft::UI::Xaml::Controls::Frame m_contentFrame{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::Grid m_titleBar{ nullptr };
         ::ScreenControl::AppTheme m_theme{ ::ScreenControl::AppTheme::System };
@@ -60,6 +63,9 @@ namespace winrt::ScreenControl::implementation
         std::unique_ptr<::ScreenControl::Core::PlaybackController> m_player;
         winrt::Microsoft::UI::Xaml::Controls::TextBlock m_statusText{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::TextBlock m_deviceText{ nullptr };
+        winrt::Microsoft::UI::Xaml::Controls::Image m_previewImage{ nullptr };
+        winrt::Microsoft::UI::Xaml::Media::Imaging::SoftwareBitmapSource m_previewSource{ nullptr };
+        winrt::Microsoft::UI::Xaml::Controls::TextBlock m_previewPlaceholder{ nullptr };
         ::ScreenControl::PowerMonitor m_powerMonitor;
     };
 }

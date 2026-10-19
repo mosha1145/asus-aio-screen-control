@@ -10,6 +10,11 @@
 #include "PlaybackController.h"
 
 #include <filesystem>
+#include <vector>
+
+#include <winrt/Windows.Storage.Streams.h>
+#include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
+#include <winrt/Windows.Graphics.Imaging.h>
 #include <functional>
 
 using namespace winrt;
@@ -412,7 +417,20 @@ namespace winrt::ScreenControl::implementation
         previewText.VerticalAlignment(VerticalAlignment::Center);
         previewText.Foreground(Application::Current().Resources()
                                    .Lookup(box_value(L"TextFillColorTertiaryBrush")).as<Brush>());
-        preview.Child(previewText);
+
+        // 实时预览：播放时把收到的帧画在这里（与设备上显示的内容一致）。
+        m_previewSource = Media::Imaging::SoftwareBitmapSource{};
+        m_previewImage = Image{};
+        m_previewImage.Source(m_previewSource);
+        m_previewImage.Stretch(Stretch::Uniform);
+        m_previewImage.Width(320);
+        m_previewImage.Height(320);
+        m_previewPlaceholder = previewText;
+
+        Grid previewInner;
+        previewInner.Children().Append(m_previewImage);
+        previewInner.Children().Append(previewText);
+        preview.Child(previewInner);
         Grid::SetColumn(preview, 0);
         body.Children().Append(preview);
 
@@ -678,6 +696,28 @@ namespace winrt::ScreenControl::implementation
                     }
                 });
             });
+
+            // 预览回调同样在工作线程触发：复制像素后封送到 UI 线程渲染。
+            m_player->SetPreviewCallback(
+                [this](std::uint8_t const* pixels, int width, int height, int stride)
+                {
+                    if (pixels == nullptr || width <= 0 || height <= 0 || stride <= 0)
+                    {
+                        return;
+                    }
+                    auto frame = std::make_shared<std::vector<std::uint8_t>>(
+                        pixels, pixels + static_cast<size_t>(stride) * static_cast<size_t>(height));
+
+                    auto dispatcher = DispatcherQueue();
+                    if (!dispatcher)
+                    {
+                        return;
+                    }
+                    dispatcher.TryEnqueue([this, frame, width, height]()
+                    {
+                        UpdatePreview(*frame, width, height);
+                    });
+                });
         }
         return *m_player;
     }
@@ -695,6 +735,44 @@ namespace winrt::ScreenControl::implementation
     MainWindow::~MainWindow()
     {
         ShutdownPlayer();
+    }
+
+    void MainWindow::UpdatePreview(std::vector<std::uint8_t> const& pixels, int width, int height)
+    {
+        if (!m_previewSource || pixels.empty() || width <= 0 || height <= 0)
+        {
+            return;
+        }
+        if (pixels.size() < static_cast<size_t>(width) * 4 * static_cast<size_t>(height))
+        {
+            return;
+        }
+
+        try
+        {
+            Windows::Storage::Streams::InMemoryRandomAccessStream stream;
+            Windows::Storage::Streams::DataWriter writer(stream);
+            writer.WriteBytes(pixels);
+            const auto buffer = writer.DetachBuffer();
+
+            const auto bitmap = Windows::Graphics::Imaging::SoftwareBitmap::CreateCopyFromBuffer(
+                buffer,
+                Windows::Graphics::Imaging::BitmapPixelFormat::Bgra8,
+                width,
+                height,
+                Windows::Graphics::Imaging::BitmapAlphaMode::Premultiplied);
+
+            m_previewSource.SetBitmapAsync(bitmap);
+
+            if (m_previewPlaceholder)
+            {
+                m_previewPlaceholder.Visibility(Visibility::Collapsed);
+            }
+        }
+        catch (...)
+        {
+            // 预览只是辅助功能，失败不应影响播放主流程
+        }
     }
 
     UIElement MainWindow::BuildSettingsPage()
@@ -790,54 +868,134 @@ namespace winrt::ScreenControl::implementation
         // 「常规」与「个性化」拆成两张卡：开机自启属于启动行为，主题属于外观，不应混在一起。
         page.Children().Append(MakeCard(general));
 
-        StackPanel personalization;
-        personalization.Spacing(12);
-        personalization.Children().Append(themeExpander);
-        page.Children().Append(MakeCard(personalization));
+        // Expander 自身就是一张卡片，不再额外套一层 MakeCard，
+        // 否则会出现双层边框与多余内边距（也就是"多包了一层"）。
+        page.Children().Append(themeExpander);
 
-        // ---------------- 电源联动（已开放，可配置） ----------------
+        // ---------------- 电源联动（参考系统设置页：顶栏总开关 + 子项） ----------------
         StackPanel powerSection;
-        powerSection.Spacing(10);
+        powerSection.Spacing(4);
 
         auto& config = AppConfigStore().Data();
 
-        auto makePowerToggle = [this, &powerSection](wchar_t const* header, bool initial,
-                                                     std::function<void(bool)> persist)
+        // 子项容器：总开关关闭时整体置灰
+        StackPanel powerItemsInner;
+        powerItemsInner.Spacing(4);
+        powerItemsInner.Margin(Thickness{ 56, 0, 0, 0 });   // 与标题文字左对齐（让开图标）
+
+        // 只有 Control 才有 IsEnabled，StackPanel 没有，所以包一层 ContentControl。
+        ContentControl powerItems;
+        powerItems.Content(powerItemsInner);
+        powerItems.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+
+        auto makePowerItem = [this, &powerItemsInner](wchar_t const* title, wchar_t const* description,
+                                                 bool initial, std::function<void(bool)> persist)
         {
-            ToggleSwitch toggle;
-            toggle.Header(box_value(header));
-            toggle.OffContent(box_value(L"关闭"));
-            toggle.OnContent(box_value(L"开启"));
-            toggle.IsOn(initial);
-            toggle.Toggled([persist](IInspectable const& sender, RoutedEventArgs const&)
+            CheckBox box;
+            box.IsChecked(initial);
+            box.Checked([persist](IInspectable const& sender, RoutedEventArgs const&)
             {
-                if (auto control = sender.try_as<ToggleSwitch>())
+                if (auto control = sender.try_as<CheckBox>())
                 {
-                    persist(control.IsOn());
+                    if (auto state = control.IsChecked()) { persist(state.GetBoolean()); }
                 }
             });
-            powerSection.Children().Append(toggle);
+            box.Unchecked([persist](IInspectable const& sender, RoutedEventArgs const&)
+            {
+                if (auto control = sender.try_as<CheckBox>())
+                {
+                    if (auto state = control.IsChecked()) { persist(state.GetBoolean()); }
+                }
+            });
+
+            StackPanel text;
+            text.Spacing(2);
+            TextBlock titleBlock;
+            titleBlock.Text(title);
+            titleBlock.TextWrapping(TextWrapping::Wrap);
+            text.Children().Append(titleBlock);
+
+            TextBlock descriptionBlock;
+            descriptionBlock.Text(description);
+            descriptionBlock.FontSize(12);
+            descriptionBlock.TextWrapping(TextWrapping::Wrap);
+            descriptionBlock.Foreground(Application::Current().Resources()
+                                            .Lookup(box_value(L"TextFillColorSecondaryBrush")).as<Brush>());
+            text.Children().Append(descriptionBlock);
+
+            box.Content(text);
+            powerItemsInner.Children().Append(box);
         };
 
-        makePowerToggle(L"电源联动（总开关）", config.powerActions,
-                        [this](bool value) { AppConfigStore().Data().powerActions = value; AppConfigStore().Save(); });
-        makePowerToggle(L"关闭程序时关闭水冷屏", config.powerCloseApp,
-                        [this](bool value) { AppConfigStore().Data().powerCloseApp = value; AppConfigStore().Save(); });
-        makePowerToggle(L"关闭电脑时关闭水冷屏", config.powerShutdown,
-                        [this](bool value) { AppConfigStore().Data().powerShutdown = value; AppConfigStore().Save(); });
-        makePowerToggle(L"注销时关闭水冷屏", config.powerLogout,
-                        [this](bool value) { AppConfigStore().Data().powerLogout = value; AppConfigStore().Save(); });
-        makePowerToggle(L"睡眠时关闭水冷屏", config.powerSleep,
-                        [this](bool value) { AppConfigStore().Data().powerSleep = value; AppConfigStore().Save(); });
+        makePowerItem(L"关闭程序时关闭水冷屏", L"退出本程序时，同时关闭水冷屏的显示。",
+                      config.powerCloseApp,
+                      [this](bool value) { AppConfigStore().Data().powerCloseApp = value; AppConfigStore().Save(); });
+        makePowerItem(L"关闭电脑时关闭水冷屏", L"系统关机前关闭显示，避免残留画面。",
+                      config.powerShutdown,
+                      [this](bool value) { AppConfigStore().Data().powerShutdown = value; AppConfigStore().Save(); });
+        makePowerItem(L"注销时关闭水冷屏", L"注销当前用户时关闭显示。",
+                      config.powerLogout,
+                      [this](bool value) { AppConfigStore().Data().powerLogout = value; AppConfigStore().Save(); });
+        makePowerItem(L"睡眠时关闭水冷屏", L"进入睡眠前关闭显示，唤醒后需重新播放。",
+                      config.powerSleep,
+                      [this](bool value) { AppConfigStore().Data().powerSleep = value; AppConfigStore().Save(); });
 
-        TextBlock powerHint;
-        powerHint.Text(L"总开关关闭时，下列各事件都不会关闭水冷屏。");
-        powerHint.FontSize(12);
-        powerHint.Foreground(Application::Current().Resources()
-                                 .Lookup(box_value(L"TextFillColorTertiaryBrush")).as<Brush>());
-        powerSection.Children().Append(powerHint);
+        // 顶栏：图标 + 标题/说明 + 总开关
+        Grid powerHeader;
+        powerHeader.ColumnSpacing(16);
+        powerHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+        powerHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
+        powerHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
 
-        page.Children().Append(MakeCard(powerSection));
+        FontIcon powerIcon;
+        powerIcon.Glyph(L"\xE7E8");
+        powerIcon.FontSize(20);
+        powerIcon.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(powerIcon, 0);
+        powerHeader.Children().Append(powerIcon);
+
+        StackPanel powerText;
+        powerText.Spacing(2);
+        TextBlock powerTitle;
+        powerTitle.Text(L"电源联动");
+        powerText.Children().Append(powerTitle);
+        TextBlock powerDescription;
+        powerDescription.Text(L"系统电源或会话事件发生时，自动关闭水冷屏显示");
+        powerDescription.FontSize(12);
+        powerDescription.TextWrapping(TextWrapping::Wrap);
+        powerDescription.Foreground(Application::Current().Resources()
+                                        .Lookup(box_value(L"TextFillColorSecondaryBrush")).as<Brush>());
+        powerText.Children().Append(powerDescription);
+        Grid::SetColumn(powerText, 1);
+        powerHeader.Children().Append(powerText);
+
+        ToggleSwitch powerMaster;
+        powerMaster.IsOn(config.powerActions);
+        powerMaster.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(powerMaster, 2);
+        powerHeader.Children().Append(powerMaster);
+
+        // 总开关关闭时子项灰显（与系统设置页一致）
+        powerItems.IsEnabled(config.powerActions);
+        powerMaster.Toggled([this, &powerItems](IInspectable const& sender, RoutedEventArgs const&)
+        {
+            if (auto control = sender.try_as<ToggleSwitch>())
+            {
+                AppConfigStore().Data().powerActions = control.IsOn();
+                AppConfigStore().Save();
+                powerItems.IsEnabled(control.IsOn());
+            }
+        });
+
+        powerSection.Children().Append(powerHeader);
+        powerSection.Children().Append(powerItems);
+
+        Expander powerExpander;
+        powerExpander.HorizontalAlignment(HorizontalAlignment::Stretch);
+        powerExpander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+        powerExpander.Header(powerHeader);
+        powerExpander.Content(powerItems);
+        page.Children().Append(powerExpander);
 
         StackPanel deferred;
         deferred.Spacing(12);

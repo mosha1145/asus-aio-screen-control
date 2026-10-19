@@ -363,17 +363,9 @@ namespace ScreenControl::Core
             }
 
             ComPtr<IMFMediaBuffer> buffer;
-            HRESULT bufferResult = sample->ConvertToContiguousBuffer(buffer.GetAddressOf());
+            const HRESULT bufferResult = sample->GetBufferByIndex(0, buffer.GetAddressOf());
             sample->Release();
-            if (FAILED(bufferResult))
-            {
-                return false;
-            }
-
-            BYTE* raw = nullptr;
-            DWORD maxLength = 0;
-            DWORD currentLength = 0;
-            if (FAILED(buffer->Lock(&raw, &maxLength, &currentLength)))
+            if (FAILED(bufferResult) || !buffer)
             {
                 return false;
             }
@@ -384,32 +376,53 @@ namespace ScreenControl::Core
             frame.stride = static_cast<int>(rowBytes);
             frame.pixels.resize(rowBytes * static_cast<size_t>(m_height));
 
-            if (m_bottomUp)
+            // 优先用 IMF2DBuffer 读取「真实」的扫描线步长与朝向。
+            // 只信 MF_MT_DEFAULT_STRIDE 并不可靠：实测某些解码器在该属性上给出 0，
+            // 于是我们无法判断是否自底向上，画面就会上下颠倒
+            // —— 这正是「照片 270° 正确、视频却正好反了 180°」的原因。
+            ComPtr<IMF2DBuffer> buffer2d;
+            if (SUCCEEDED(buffer.As(&buffer2d)))
             {
-                // 翻正：源第 0 行是画面最底行
-                for (int y = 0; y < m_height; ++y)
+                BYTE* scanline0 = nullptr;
+                LONG pitch = 0;
+                if (SUCCEEDED(buffer2d->Lock2D(&scanline0, &pitch)))
                 {
-                    const size_t srcOffset = static_cast<size_t>(m_stride) * static_cast<size_t>(m_height - 1 - y);
-                    if (srcOffset + rowBytes > currentLength)
+                    const bool bottomUp = pitch < 0;
+                    const size_t stride = static_cast<size_t>(bottomUp ? -pitch : pitch);
+                    for (int y = 0; y < m_height; ++y)
                     {
-                        break;
+                        const size_t sourceRow = bottomUp
+                            ? static_cast<size_t>(m_height - 1 - y)
+                            : static_cast<size_t>(y);
+                        memcpy(frame.pixels.data() + rowBytes * static_cast<size_t>(y),
+                               scanline0 + stride * sourceRow, rowBytes);
                     }
-                    memcpy(frame.pixels.data() + rowBytes * static_cast<size_t>(y),
-                           raw + srcOffset, rowBytes);
+                    buffer2d->Unlock2D();
+                    return true;
                 }
             }
-            else
+
+            // 退化路径：连续缓冲 + 媒体类型里记录的 stride
+            BYTE* raw = nullptr;
+            DWORD maxLength = 0;
+            DWORD currentLength = 0;
+            if (FAILED(buffer->Lock(&raw, &maxLength, &currentLength)))
             {
-                for (int y = 0; y < m_height; ++y)
+                return false;
+            }
+
+            for (int y = 0; y < m_height; ++y)
+            {
+                const size_t sourceRow = m_bottomUp
+                    ? static_cast<size_t>(m_height - 1 - y)
+                    : static_cast<size_t>(y);
+                const size_t srcOffset = static_cast<size_t>(m_stride) * sourceRow;
+                if (srcOffset + rowBytes > currentLength)
                 {
-                    const size_t srcOffset = static_cast<size_t>(m_stride) * static_cast<size_t>(y);
-                    if (srcOffset + rowBytes > currentLength)
-                    {
-                        break;
-                    }
-                    memcpy(frame.pixels.data() + rowBytes * static_cast<size_t>(y),
-                           raw + srcOffset, rowBytes);
+                    break;
                 }
+                memcpy(frame.pixels.data() + rowBytes * static_cast<size_t>(y),
+                       raw + srcOffset, rowBytes);
             }
 
             buffer->Unlock();
