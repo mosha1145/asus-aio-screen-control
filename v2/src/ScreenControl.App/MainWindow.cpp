@@ -99,11 +99,12 @@ namespace winrt::ScreenControl::implementation
         m_titleBar = Grid{};
         m_contentFrame = Frame{};
 
-        // 页面切换动画：NavigationView 默认使用的入场过渡
-        // （Frame 直接换 Content 不会自动播放，需要挂 ContentTransitions）。
-        Microsoft::UI::Xaml::Media::Animation::EntranceThemeTransition entrance;
-        entrance.FromVerticalOffset(20);
-        m_contentFrame.ContentTransitions().Append(entrance);
+        // 页面切换动画：用 NavigationThemeTransition + EntranceNavigationTransitionInfo，
+        // 与 Frame.Navigate 走的是同一套平台默认过渡（NavigationView 也是这个）。
+        Microsoft::UI::Xaml::Media::Animation::NavigationThemeTransition navigation;
+        navigation.DefaultNavigationTransitionInfo(
+            Microsoft::UI::Xaml::Media::Animation::EntranceNavigationTransitionInfo{});
+        m_contentFrame.ContentTransitions().Append(navigation);
 
         // 根容器背景留空：一旦设了实色，Mica 就被盖住了。
         Grid root = RootGrid();
@@ -185,7 +186,6 @@ namespace winrt::ScreenControl::implementation
         // 启动时按配置恢复主题（含「跟随系统」）。
         m_theme = ::ScreenControl::NativeTheme::Parse(AppConfigStore().Data().appTheme);
         ApplyTheme(m_theme, false);
-        ApplyThemeColor(AppConfigStore().Data().themeColor == L"tuf");
 
         // 恢复上次的显示参数与屏幕开关状态
         ApplyPersistedDeviceState();
@@ -236,7 +236,7 @@ namespace winrt::ScreenControl::implementation
         // 用原生 Expander 作外壳，保留 Fluent 卡片的默认样式与展开动画；
         // 只把标题行做成可拉伸的 Grid，保证右侧元素贴右、标题垂直居中。
         Grid header;
-        header.MinHeight(56);
+        header.MinHeight(64);
         header.ColumnSpacing(16);
         header.HorizontalAlignment(HorizontalAlignment::Stretch);
         header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
@@ -274,36 +274,6 @@ namespace winrt::ScreenControl::implementation
     }
 
 
-    void MainWindow::ApplyThemeColor(bool tufGaming)
-    {
-        auto resources = Application::Current().Resources();
-
-        if (tufGaming)
-        {
-            // TUF GAMING orange #FF9E1B
-            const auto accent = Windows::UI::ColorHelper::FromArgb(0xFF, 0xFF, 0x9E, 0x1B);
-            const auto accentLight = Windows::UI::ColorHelper::FromArgb(0xFF, 0xFF, 0xB3, 0x4D);
-            const auto accentDark = Windows::UI::ColorHelper::FromArgb(0xFF, 0xCC, 0x7A, 0x00);
-
-            resources.Insert(box_value(L"SystemAccentColor"), box_value(accent));
-            resources.Insert(box_value(L"SystemAccentColorLight1"), box_value(accentLight));
-            resources.Insert(box_value(L"SystemAccentColorDark1"), box_value(accentDark));
-            resources.Insert(box_value(L"AccentFillColorDefaultBrush"),
-                             box_value(Media::SolidColorBrush(accent)));
-        }
-        else
-        {
-            for (auto const& key : { L"SystemAccentColor", L"SystemAccentColorLight1",
-                                     L"SystemAccentColorDark1", L"AccentFillColorDefaultBrush" })
-            {
-                if (resources.HasKey(box_value(key)))
-                {
-                    resources.Remove(box_value(key));
-                }
-            }
-        }
-
-    }
     void MainWindow::SetupPowerEvents()
     {
         HWND hwnd = GetHwnd();
@@ -500,12 +470,17 @@ namespace winrt::ScreenControl::implementation
         Border preview;
         preview.Width(332);
         preview.Height(332);
-        preview.CornerRadius(CornerRadius{ 12, 12, 12, 12 });
+        preview.CornerRadius(CornerRadius{ 8, 8, 8, 8 });
         preview.BorderThickness(Thickness{ 1, 1, 1, 1 });
         preview.BorderBrush(Application::Current().Resources()
                                 .Lookup(box_value(L"CardStrokeColorDefaultBrush")).as<Brush>());
-        preview.Background(Application::Current().Resources()
-                               .Lookup(box_value(L"CardBackgroundFillColorDefaultBrush")).as<Brush>());
+        // 画面四周（letterbox 区域）一律黑色，与设备实际显示一致
+        preview.Background(SolidColorBrush{ Windows::UI::Colors::Black() });
+
+        // 与 Mica 背景区分开：加主题阴影并抬升 Z 轴
+        auto previewShadow = ThemeShadow{};
+        preview.Shadow(previewShadow);
+        preview.Translation(Windows::Foundation::Numerics::float3{ 0.0f, 0.0f, 16.0f });
         TextBlock previewText;
         previewText.Text(L"未在显示");
         previewText.HorizontalAlignment(HorizontalAlignment::Center);
@@ -573,7 +548,6 @@ namespace winrt::ScreenControl::implementation
 
         ComboBox fitMode;
         fitMode.Header(box_value(L"图像适应"));
-        fitMode.MinHeight(40);
         fitMode.Items().Append(box_value(L"适应 · contain"));
         fitMode.Items().Append(box_value(L"填充 · cover"));
         fitMode.Items().Append(box_value(L"拉伸 · stretch"));
@@ -600,7 +574,6 @@ namespace winrt::ScreenControl::implementation
 
         ComboBox rotation;
         rotation.Header(box_value(L"画面旋转"));
-        rotation.MinHeight(40);
         rotation.Items().Append(box_value(L"0°"));
         rotation.Items().Append(box_value(L"90°"));
         rotation.Items().Append(box_value(L"180°"));
@@ -970,7 +943,6 @@ namespace winrt::ScreenControl::implementation
             const std::wstring value = radio.SelectedIndex() == 0 ? L"tuf" : L"system";
             AppConfigStore().Data().themeColor = value;
             AppConfigStore().Save();
-            ApplyThemeColor(value == L"tuf");
             colorValue.Text(colorLabelOf(value));
         });
 
@@ -981,7 +953,7 @@ namespace winrt::ScreenControl::implementation
         // 子项容器：总开关关闭时整体置灰
         StackPanel powerItemsInner;
         powerItemsInner.Spacing(4);
-        powerItemsInner.Margin(Thickness{ 56, 0, 0, 0 });   // 与标题文字左对齐（让开图标）
+
 
         // 只有 Control 才有 IsEnabled，StackPanel 没有，所以包一层 ContentControl。
         ContentControl powerItems;

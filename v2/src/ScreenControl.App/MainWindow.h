@@ -48,8 +48,6 @@ namespace winrt::ScreenControl::implementation
         /// 启动时把配置里的显示参数与屏幕状态应用到设备。
         void ApplyPersistedDeviceState();
 
-        /// 应用主题色（TUF GAMING 橙 / 系统强调色）。
-        void ApplyThemeColor(bool tufGaming);
 
         /// 构建一张可折叠的设置卡片（自绘，替代 Expander 以便精确控制对齐与高度）。
         /// glyph: 左侧图标；title: 标题；trailing: 标题行右侧元素（可为 nullptr）；
