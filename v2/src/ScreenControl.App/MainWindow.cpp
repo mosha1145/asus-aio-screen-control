@@ -10,6 +10,7 @@
 #include "PlaybackController.h"
 
 #include <filesystem>
+#include <functional>
 
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
@@ -324,6 +325,20 @@ namespace winrt::ScreenControl::implementation
                 titleBar.ButtonInactiveForegroundColor(foreground);
                 titleBar.ButtonHoverForegroundColor(foreground);
                 titleBar.ButtonPressedForegroundColor(foreground);
+
+                // 背景色也要跟随主题：否则浅色主题下悬停/按下会露出深色底块。
+                auto const transparent = Windows::UI::Colors::Transparent();
+                auto const hoverBackground = dark
+                    ? Windows::UI::ColorHelper::FromArgb(0x1A, 0xFF, 0xFF, 0xFF)
+                    : Windows::UI::ColorHelper::FromArgb(0x1A, 0x00, 0x00, 0x00);
+                auto const pressedBackground = dark
+                    ? Windows::UI::ColorHelper::FromArgb(0x33, 0xFF, 0xFF, 0xFF)
+                    : Windows::UI::ColorHelper::FromArgb(0x33, 0x00, 0x00, 0x00);
+
+                titleBar.ButtonBackgroundColor(transparent);
+                titleBar.ButtonInactiveBackgroundColor(transparent);
+                titleBar.ButtonHoverBackgroundColor(hoverBackground);
+                titleBar.ButtonPressedBackgroundColor(pressedBackground);
             }
         }
 
@@ -771,10 +786,58 @@ namespace winrt::ScreenControl::implementation
         themeExpander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
         themeExpander.Header(themeHeader);
         themeExpander.Content(themeChoice);
-        general.Children().Append(themeExpander);
 
-
+        // 「常规」与「个性化」拆成两张卡：开机自启属于启动行为，主题属于外观，不应混在一起。
         page.Children().Append(MakeCard(general));
+
+        StackPanel personalization;
+        personalization.Spacing(12);
+        personalization.Children().Append(themeExpander);
+        page.Children().Append(MakeCard(personalization));
+
+        // ---------------- 电源联动（已开放，可配置） ----------------
+        StackPanel powerSection;
+        powerSection.Spacing(10);
+
+        auto& config = AppConfigStore().Data();
+
+        auto makePowerToggle = [this, &powerSection](wchar_t const* header, bool initial,
+                                                     std::function<void(bool)> persist)
+        {
+            ToggleSwitch toggle;
+            toggle.Header(box_value(header));
+            toggle.OffContent(box_value(L"关闭"));
+            toggle.OnContent(box_value(L"开启"));
+            toggle.IsOn(initial);
+            toggle.Toggled([persist](IInspectable const& sender, RoutedEventArgs const&)
+            {
+                if (auto control = sender.try_as<ToggleSwitch>())
+                {
+                    persist(control.IsOn());
+                }
+            });
+            powerSection.Children().Append(toggle);
+        };
+
+        makePowerToggle(L"电源联动（总开关）", config.powerActions,
+                        [this](bool value) { AppConfigStore().Data().powerActions = value; AppConfigStore().Save(); });
+        makePowerToggle(L"关闭程序时关闭水冷屏", config.powerCloseApp,
+                        [this](bool value) { AppConfigStore().Data().powerCloseApp = value; AppConfigStore().Save(); });
+        makePowerToggle(L"关闭电脑时关闭水冷屏", config.powerShutdown,
+                        [this](bool value) { AppConfigStore().Data().powerShutdown = value; AppConfigStore().Save(); });
+        makePowerToggle(L"注销时关闭水冷屏", config.powerLogout,
+                        [this](bool value) { AppConfigStore().Data().powerLogout = value; AppConfigStore().Save(); });
+        makePowerToggle(L"睡眠时关闭水冷屏", config.powerSleep,
+                        [this](bool value) { AppConfigStore().Data().powerSleep = value; AppConfigStore().Save(); });
+
+        TextBlock powerHint;
+        powerHint.Text(L"总开关关闭时，下列各事件都不会关闭水冷屏。");
+        powerHint.FontSize(12);
+        powerHint.Foreground(Application::Current().Resources()
+                                 .Lookup(box_value(L"TextFillColorTertiaryBrush")).as<Brush>());
+        powerSection.Children().Append(powerHint);
+
+        page.Children().Append(MakeCard(powerSection));
 
         StackPanel deferred;
         deferred.Spacing(12);
@@ -783,13 +846,8 @@ namespace winrt::ScreenControl::implementation
         deferredInfo.IsClosable(false);
         deferredInfo.Severity(InfoBarSeverity::Informational);
         deferredInfo.Title(L"以下功能本期不实现");
-        deferredInfo.Message(L"温度/硬件信息监测、系统信息采集、电源联动、自定义主题、悬浮窗、桌面实时投射、SMTC 媒体封面捕获。相关配置键保留以兼容 v1 配置，界面项在此处灰显占位。");
+        deferredInfo.Message(L"温度/硬件信息监测、系统信息采集、自定义主题、悬浮窗、桌面实时投射、SMTC 媒体封面捕获。相关配置键保留以兼容 v1 配置，界面项在此处灰显占位。");
         deferred.Children().Append(deferredInfo);
-
-        ToggleSwitch powerSwitch;
-        powerSwitch.Header(box_value(L"电源联动（暂缓）"));
-        powerSwitch.IsEnabled(false);
-        deferred.Children().Append(powerSwitch);
 
         ToggleSwitch smtcSwitch;
         smtcSwitch.Header(box_value(L"SMTC 媒体封面捕获（暂缓）"));

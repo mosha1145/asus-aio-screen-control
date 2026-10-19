@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <vector>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -90,6 +91,10 @@ namespace ScreenControl::Core
 
         PreviewCallback m_preview;
         StatusCallback m_status;
+
+        // 照片静止帧的编码缓存（照片每帧复用，避免重复编码）
+        std::vector<std::uint8_t> m_photoJpeg;
+        std::atomic<bool> m_photoDirty{ true };
 
         std::thread m_worker;
         std::atomic<bool> m_running{ false };

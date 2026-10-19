@@ -90,6 +90,7 @@ namespace ScreenControl::Core
             std::lock_guard lock(m_mutex);
             m_params = params;
         }
+        m_photoDirty.store(true);
     }
 
     Imaging::RenderParams PlaybackController::Params() const
@@ -101,7 +102,9 @@ namespace ScreenControl::Core
     void PlaybackController::SetPhotoFps(double fps)
     {
         std::lock_guard lock(m_mutex);
-        m_photoFps = fps > 0.1 ? fps : 0.1;
+        // 下限 5 Hz：帧间隔过长时固件会在两帧之间回落自带动画，表现为「一亮一灭」。
+        const double clamped = fps < 5.0 ? 5.0 : fps;
+        m_photoFps = clamped;
     }
 
     void PlaybackController::SetPreviewCallback(PreviewCallback callback)
@@ -225,13 +228,27 @@ namespace ScreenControl::Core
             }
 
             Imaging::RenderParams params = Params();
-            Imaging::FrameView view{ frame.pixels.data(), frame.width, frame.height, frame.stride };
 
-            if (!m_pipeline.RenderJpeg(view, params.fitMode, params.rotation,
-                                       params.jpegQuality, jpeg))
+            // 照片是静止画面：编码一次就复用，避免每帧重复「缩放 + 旋转 + JPEG 编码」。
+            // 这既是性能优化，也避免编码耗时把发送间隔拉长、导致屏幕一亮一灭。
+            if (kind == MediaKind::Photo && !m_photoDirty.load() && !m_photoJpeg.empty())
             {
-                Notify(L"帧编码失败");
-                break;
+                jpeg = m_photoJpeg;
+            }
+            else
+            {
+                Imaging::FrameView view{ frame.pixels.data(), frame.width, frame.height, frame.stride };
+                if (!m_pipeline.RenderJpeg(view, params.fitMode, params.rotation,
+                                           params.jpegQuality, jpeg))
+                {
+                    Notify(L"帧编码失败");
+                    break;
+                }
+                if (kind == MediaKind::Photo)
+                {
+                    m_photoJpeg = jpeg;
+                    m_photoDirty.store(false);
+                }
             }
 
             // 预览：已适配、未旋转
