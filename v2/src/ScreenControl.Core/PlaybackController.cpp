@@ -80,14 +80,10 @@ namespace ScreenControl::Core
             return false;
         }
 
-        const bool ok = m_device.SetScreen(on);
-        if (ok && on && !m_playing.load())
-        {
-            // 设备会保留上一次的帧缓冲：重新开屏时若没有在播放，
-            // 会直接显示上次退出前残留的画面。这里补发一张全黑帧清屏。
-            SendBlankFrame();
-        }
-        return ok;
+        // 不再补发黑帧：设备在没有收到新帧时会在约 3 秒后自动回到自带动画，
+        // 这正是期望的行为。主动发黑帧反而会盖住自带动画、也让"残留画面"
+        // 看起来像是我们发过去的。
+        return m_device.SetScreen(on);
     }
 
     void PlaybackController::SendBlankFrame()

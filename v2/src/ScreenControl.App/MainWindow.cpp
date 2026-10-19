@@ -342,6 +342,10 @@ namespace winrt::ScreenControl::implementation
             }
             m_powerMonitor.Stop();
             ShutdownPlayer();
+
+            // 显式退出进程：否则窗口关闭后线程/句柄可能残留，
+            // 继续占着 HID，设备也无法按固件超时回到自带动画。
+            Application::Current().Exit();
         });
     }
     HWND MainWindow::GetHwnd() const noexcept
@@ -500,6 +504,7 @@ namespace winrt::ScreenControl::implementation
         Grid previewInner;
         previewInner.Children().Append(m_previewImage);
         previewInner.Children().Append(previewText);
+        // Border 设置 CornerRadius 后会裁剪子内容，画面圆角自然与外框一致。
         preview.Child(previewInner);
         Grid::SetColumn(preview, 0);
         body.Children().Append(preview);
@@ -856,11 +861,37 @@ namespace winrt::ScreenControl::implementation
         StackPanel general;
         general.Spacing(14);
 
+        // 开机自启动：左侧文本、右侧开关（与系统设置页的条目一致，开关不显示文字）
         ToggleSwitch autoStart;
-        autoStart.Header(box_value(L"开机自启"));
-        autoStart.OffContent(box_value(L"关闭"));
-        autoStart.OnContent(box_value(L"开启"));
-        general.Children().Append(autoStart);
+        autoStart.OnContent(nullptr);
+        autoStart.OffContent(nullptr);
+        autoStart.VerticalAlignment(VerticalAlignment::Center);
+        autoStart.HorizontalAlignment(HorizontalAlignment::Right);
+
+        Grid autoStartRow;
+        autoStartRow.MinHeight(64);
+        autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+        autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
+        autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+
+        FontIcon autoStartIcon;
+        autoStartIcon.Glyph(L"\xE7E8");
+        autoStartIcon.FontSize(16);
+        autoStartIcon.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(autoStartIcon, 0);
+        autoStartRow.Children().Append(autoStartIcon);
+
+        TextBlock autoStartLabel;
+        autoStartLabel.Text(L"开机自启动");
+        autoStartLabel.VerticalAlignment(VerticalAlignment::Center);
+        autoStartLabel.Margin(Thickness{ 16, 0, 0, 0 });
+        Grid::SetColumn(autoStartLabel, 1);
+        autoStartRow.Children().Append(autoStartLabel);
+
+        Grid::SetColumn(autoStart, 2);
+        autoStartRow.Children().Append(autoStart);
+
+        general.Children().Append(autoStartRow);
 
         // 主题：参考系统设置页的做法 —— 可展开条目，标题行左侧图标 + 名称、
         // 右侧显示当前选项；展开后三选一。顺序按参考图：浅色 / 深色 / 使用系统设置。
@@ -930,7 +961,7 @@ namespace winrt::ScreenControl::implementation
 
 
         RadioButtons colorChoice;
-        colorChoice.Items().Append(box_value(L"TUF GAMING（#FF9E1B）"));
+        colorChoice.Items().Append(box_value(L"TUF GAMING"));
         colorChoice.Items().Append(box_value(L"使用系统设置"));
         colorChoice.SelectedIndex(config.themeColor == L"tuf" ? 0 : 1);
         colorChoice.SelectionChanged([this, colorValue, colorLabelOf](IInspectable const& sender, SelectionChangedEventArgs const&)
@@ -999,6 +1030,8 @@ namespace winrt::ScreenControl::implementation
 
         ToggleSwitch powerMaster;
         powerMaster.IsOn(config.powerActions);
+        powerMaster.OnContent(nullptr);
+        powerMaster.OffContent(nullptr);
         powerMaster.VerticalAlignment(VerticalAlignment::Center);
         powerMaster.HorizontalAlignment(HorizontalAlignment::Right);
         Grid::SetColumn(powerMaster, 2);
