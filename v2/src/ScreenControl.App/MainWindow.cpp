@@ -192,6 +192,7 @@ namespace winrt::ScreenControl::implementation
 
         // 电源 / 会话事件（睡眠、关机、注销）与窗口关闭处理。
         SetupPowerEvents();
+
     }
 
     void MainWindow::ApplyPersistedDeviceState()
@@ -944,28 +945,6 @@ namespace winrt::ScreenControl::implementation
         themeValue.VerticalAlignment(VerticalAlignment::Center);
         themeValue.Text(themeLabelOf(m_theme));
 
-        Grid themeHeader;
-        themeHeader.ColumnSpacing(12);
-        themeHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-        themeHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
-        themeHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-
-        FontIcon themeIcon;
-        themeIcon.Glyph(L"\xE706");
-        themeIcon.FontSize(16);
-        themeIcon.VerticalAlignment(VerticalAlignment::Center);
-        Grid::SetColumn(themeIcon, 0);
-        themeHeader.Children().Append(themeIcon);
-
-        TextBlock themeTitle;
-        themeTitle.Text(L"应用主题");
-        themeTitle.VerticalAlignment(VerticalAlignment::Center);
-        Grid::SetColumn(themeTitle, 1);
-        themeHeader.Children().Append(themeTitle);
-
-        Grid::SetColumn(themeValue, 2);
-        themeHeader.Children().Append(themeValue);
-
         RadioButtons themeChoice;
         themeChoice.Items().Append(box_value(L"浅色"));
         themeChoice.Items().Append(box_value(L"深色"));
@@ -1085,35 +1064,11 @@ namespace winrt::ScreenControl::implementation
         makePowerItem(L"注销时", config.powerLogout,
                       [this](bool value) { AppConfigStore().Data().powerLogout = value; AppConfigStore().Save(); });
 
-        // 顶栏：图标 + 标题/说明 + 总开关
-        Grid powerHeader;
-        powerHeader.ColumnSpacing(16);
-        powerHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-        powerHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
-        powerHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-
-        FontIcon powerIcon;
-        powerIcon.Glyph(L"\xE7E8");
-        powerIcon.FontSize(20);
-        powerIcon.VerticalAlignment(VerticalAlignment::Center);
-        Grid::SetColumn(powerIcon, 0);
-        powerHeader.Children().Append(powerIcon);
-
-        StackPanel powerText;
-        powerText.Spacing(2);
-        TextBlock powerTitle;
-        powerTitle.Text(L"智能关屏");
-        powerText.Children().Append(powerTitle);
-        Grid::SetColumn(powerText, 1);
-        powerHeader.Children().Append(powerText);
-
         ToggleSwitch powerMaster;
         powerMaster.IsOn(config.powerActions);
         powerMaster.VerticalAlignment(VerticalAlignment::Center);
         powerMaster.HorizontalAlignment(HorizontalAlignment::Right);
         Grid::SetColumn(powerMaster, 2);
-        powerHeader.Children().Append(powerMaster);
-        powerHeader.HorizontalAlignment(HorizontalAlignment::Stretch);
 
         // 总开关关闭时子项灰显（与系统设置页一致）
         powerItems.IsEnabled(config.powerActions);
