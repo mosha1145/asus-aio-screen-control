@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "MediaDecoders.h"
 
+#include "FrameChunker.h"
+
 #include <wincodec.h>
 #include <wrl/client.h>
 
@@ -160,8 +162,21 @@ namespace ScreenControl::Core
             m_mfStarted = true;
         }
 
+        // 关键：SourceReader 默认不加载「视频处理器 MFT」，因此不能直接输出 RGB32，
+        // SetCurrentMediaType 会返回 MF_E_INVALIDMEDIATYPE (0xC00D36B4)。
+        // 打开高级视频处理后，SourceReader 会自动插入视频处理器，
+        // 从而支持色彩空间转换，并且可以顺带把画面缩放到我们需要的尺寸。
+        ComPtr<IMFAttributes> readerAttributes;
+        MFCreateAttributes(readerAttributes.GetAddressOf(), 2);
+        if (readerAttributes)
+        {
+            readerAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, TRUE);
+            readerAttributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE);
+        }
+
         IMFSourceReader* reader = nullptr;
-        if (FAILED(MFCreateSourceReaderFromURL(path.c_str(), nullptr, &reader)) || reader == nullptr)
+        if (FAILED(MFCreateSourceReaderFromURL(path.c_str(), readerAttributes.Get(), &reader)) ||
+            reader == nullptr)
         {
             return false;
         }
@@ -171,7 +186,8 @@ namespace ScreenControl::Core
         reader->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS), FALSE);
         reader->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), TRUE);
 
-        // 要求解码成 RGB32（等价 BGRA）
+        // 要求解码成 RGB32（等价 BGRA）。
+        // 优先请求直接缩放到 320x320：由视频处理器做缩放比我们自己逐像素采样快得多。
         ComPtr<IMFMediaType> requested;
         if (FAILED(MFCreateMediaType(requested.GetAddressOf())))
         {
@@ -180,9 +196,28 @@ namespace ScreenControl::Core
         }
         requested->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
         requested->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
-        if (FAILED(reader->SetCurrentMediaType(
-                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), nullptr,
-                requested.Get())))
+        MFSetAttributeSize(requested.Get(), MF_MT_FRAME_SIZE,
+                           static_cast<UINT32>(::ScreenControl::Device::kScreenSize), static_cast<UINT32>(::ScreenControl::Device::kScreenSize));
+
+        HRESULT hrSet = reader->SetCurrentMediaType(
+            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), nullptr, requested.Get());
+
+        if (FAILED(hrSet))
+        {
+            // 某些解码器不接受指定尺寸，退回「只要求 RGB32、保持原始尺寸」。
+            ComPtr<IMFMediaType> plainRgb;
+            if (FAILED(MFCreateMediaType(plainRgb.GetAddressOf())))
+            {
+                Close();
+                return false;
+            }
+            plainRgb->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+            plainRgb->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
+            hrSet = reader->SetCurrentMediaType(
+                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), nullptr, plainRgb.Get());
+        }
+
+        if (FAILED(hrSet))
         {
             Close();
             return false;

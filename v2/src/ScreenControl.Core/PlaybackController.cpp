@@ -289,6 +289,12 @@ namespace ScreenControl::Core
 
             // 节流
             double fps = decoder->Fps();
+            if (kind == MediaKind::Video && fps > 30.0)
+            {
+                // 上限 30 fps：320x320 JPEG 在 HID 上的带宽有限，
+                // 60fps 素材直接按原速发会持续排队、画面越播越滞后。
+                fps = 30.0;
+            }
             if (kind == MediaKind::Photo)
             {
                 std::lock_guard lock(m_mutex);
