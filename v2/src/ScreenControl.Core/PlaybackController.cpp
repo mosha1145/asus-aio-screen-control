@@ -79,7 +79,37 @@ namespace ScreenControl::Core
         {
             return false;
         }
-        return m_device.SetScreen(on);
+
+        const bool ok = m_device.SetScreen(on);
+        if (ok && on && !m_playing.load())
+        {
+            // 设备会保留上一次的帧缓冲：重新开屏时若没有在播放，
+            // 会直接显示上次退出前残留的画面。这里补发一张全黑帧清屏。
+            SendBlankFrame();
+        }
+        return ok;
+    }
+
+    void PlaybackController::SendBlankFrame()
+    {
+        if (m_blankJpeg.empty())
+        {
+            const int size = m_pipeline.Size();
+            std::vector<std::uint8_t> black(static_cast<size_t>(size) * size * 4, 0);
+            Imaging::FrameView view{ black.data(), size, size, size * 4 };
+            std::vector<std::uint8_t> jpeg;
+            if (!m_pipeline.RenderJpeg(view, Imaging::FitMode::Stretch,
+                                       Imaging::Rotation::Deg0, 85, jpeg))
+            {
+                return;
+            }
+            m_blankJpeg = std::move(jpeg);
+        }
+
+        if (m_device.IsOpen())
+        {
+            m_device.SendFrame(m_blankJpeg, 0);
+        }
     }
 
     // ==================== 参数 ====================

@@ -58,6 +58,9 @@ namespace ScreenControl::Core
         bool SetBrightness(int percent);
         bool SetScreenPower(bool on);
 
+        /// 发送一张全黑帧（清掉屏幕上残留的上一帧画面）。
+        void SendBlankFrame();
+
         // ---------------- 播放 ----------------
         /// 播放指定素材（照片或视频自动识别）。会先停止当前播放。
         bool Play(std::filesystem::path const& path);
@@ -94,6 +97,7 @@ namespace ScreenControl::Core
 
         // 照片静止帧的编码缓存（照片每帧复用，避免重复编码）
         std::vector<std::uint8_t> m_photoJpeg;
+        std::vector<std::uint8_t> m_blankJpeg;
         std::atomic<bool> m_photoDirty{ true };
 
         std::thread m_worker;

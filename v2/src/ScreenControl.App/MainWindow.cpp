@@ -177,6 +177,7 @@ namespace winrt::ScreenControl::implementation
         // 启动时按配置恢复主题（含「跟随系统」）。
         m_theme = ::ScreenControl::NativeTheme::Parse(AppConfigStore().Data().appTheme);
         ApplyTheme(m_theme, false);
+        ApplyThemeColor(AppConfigStore().Data().themeColor == L"tuf");
 
         // 恢复上次的显示参数与屏幕开关状态
         ApplyPersistedDeviceState();
@@ -220,6 +221,41 @@ namespace winrt::ScreenControl::implementation
         Player().SetBrightness(config.brightness);
         Player().SetScreenPower(config.screenOn);
     }
+    void MainWindow::ApplyThemeColor(bool tufGaming)
+    {
+        auto resources = Application::Current().Resources();
+
+        if (tufGaming)
+        {
+            // TUF GAMING �� #FF9E1B
+            const auto accent = Windows::UI::ColorHelper::FromArgb(0xFF, 0xFF, 0x9E, 0x1B);
+            const auto accentLight = Windows::UI::ColorHelper::FromArgb(0xFF, 0xFF, 0xB3, 0x4D);
+            const auto accentDark = Windows::UI::ColorHelper::FromArgb(0xFF, 0xCC, 0x7A, 0x00);
+
+            resources.Insert(box_value(L"SystemAccentColor"), box_value(accent));
+            resources.Insert(box_value(L"SystemAccentColorLight1"), box_value(accentLight));
+            resources.Insert(box_value(L"SystemAccentColorDark1"), box_value(accentDark));
+            resources.Insert(box_value(L"AccentFillColorDefaultBrush"),
+                             box_value(Media::SolidColorBrush(accent)));
+        }
+        else
+        {
+            for (auto const& key : { L"SystemAccentColor", L"SystemAccentColorLight1",
+                                     L"SystemAccentColorDark1", L"AccentFillColorDefaultBrush" })
+            {
+                if (resources.HasKey(box_value(key)))
+                {
+                    resources.Remove(box_value(key));
+                }
+            }
+        }
+
+        // 资源变化不会重绘已创建的元素：重建当前页让新配色生效。
+        if (m_contentFrame)
+        {
+            NavigateTo(m_currentTag);
+        }
+    }
     void MainWindow::SetupPowerEvents()
     {
         HWND hwnd = GetHwnd();
@@ -254,6 +290,16 @@ namespace winrt::ScreenControl::implementation
             if (cfg.powerActions && cfg.powerShutdown)
             {
                 turnOffScreen();
+            }
+        };
+
+        handlers.resume = [this]()
+        {
+            // 唤醒后按用户设定恢复：上次是开就点亮，上次是关就保持关闭。
+            // 睡眠时可能已被关屏，这里重新下发开屏命令。
+            if (m_player)
+            {
+                m_player->SetScreenPower(AppConfigStore().Data().screenOn);
             }
         };
 
@@ -378,6 +424,7 @@ namespace winrt::ScreenControl::implementation
 
     void MainWindow::NavigateTo(std::wstring const& tag)
     {
+        m_currentTag = tag;
         if (tag == L"settings")
         {
             m_contentFrame.Content(BuildSettingsPage());
@@ -478,6 +525,7 @@ namespace winrt::ScreenControl::implementation
 
         ComboBox fitMode;
         fitMode.Header(box_value(L"图像适应"));
+        fitMode.MinHeight(40);
         fitMode.Items().Append(box_value(L"适应 · contain"));
         fitMode.Items().Append(box_value(L"填充 · cover"));
         fitMode.Items().Append(box_value(L"拉伸 · stretch"));
@@ -504,6 +552,7 @@ namespace winrt::ScreenControl::implementation
 
         ComboBox rotation;
         rotation.Header(box_value(L"画面旋转"));
+        rotation.MinHeight(40);
         rotation.Items().Append(box_value(L"0°"));
         rotation.Items().Append(box_value(L"90°"));
         rotation.Items().Append(box_value(L"180°"));
@@ -816,7 +865,7 @@ namespace winrt::ScreenControl::implementation
         themeHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
 
         FontIcon themeIcon;
-        themeIcon.Glyph(L"\xE790");
+        themeIcon.Glyph(L"\xE706");
         themeIcon.FontSize(16);
         themeIcon.VerticalAlignment(VerticalAlignment::Center);
         Grid::SetColumn(themeIcon, 0);
@@ -872,8 +921,68 @@ namespace winrt::ScreenControl::implementation
         // 否则会出现双层边框与多余内边距（也就是"多包了一层"）。
         page.Children().Append(themeExpander);
 
-        // ---------------- 电源联动（参考系统设置页：顶栏总开关 + 子项） ----------------
+        // ---------------- 主题色 ----------------
         auto& config = AppConfigStore().Data();
+
+        auto colorLabelOf = [](std::wstring const& value) -> wchar_t const*
+        {
+            return value == L"tuf" ? L"TUF GAMING" : L"使用系统设置";
+        };
+
+        TextBlock colorValue;
+        colorValue.FontSize(12);
+        colorValue.VerticalAlignment(VerticalAlignment::Center);
+        colorValue.Text(colorLabelOf(config.themeColor));
+
+        Grid colorHeader;
+        colorHeader.ColumnSpacing(12);
+        colorHeader.HorizontalAlignment(HorizontalAlignment::Stretch);
+        colorHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+        colorHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
+        colorHeader.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+
+        FontIcon colorIcon;
+        colorIcon.Glyph(L"\xE790");   // 画刷图标（与参考图一致）
+        colorIcon.FontSize(16);
+        colorIcon.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(colorIcon, 0);
+        colorHeader.Children().Append(colorIcon);
+
+        TextBlock colorTitle;
+        colorTitle.Text(L"主题色");
+        colorTitle.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(colorTitle, 1);
+        colorHeader.Children().Append(colorTitle);
+
+        Grid::SetColumn(colorValue, 2);
+        colorHeader.Children().Append(colorValue);
+
+        RadioButtons colorChoice;
+        colorChoice.Items().Append(box_value(L"TUF GAMING（#FF9E1B）"));
+        colorChoice.Items().Append(box_value(L"使用系统设置"));
+        colorChoice.SelectedIndex(config.themeColor == L"tuf" ? 0 : 1);
+        colorChoice.SelectionChanged([this, colorValue, colorLabelOf](IInspectable const& sender, SelectionChangedEventArgs const&)
+        {
+            auto radio = sender.try_as<RadioButtons>();
+            if (!radio)
+            {
+                return;
+            }
+            const std::wstring value = radio.SelectedIndex() == 0 ? L"tuf" : L"system";
+            AppConfigStore().Data().themeColor = value;
+            AppConfigStore().Save();
+            ApplyThemeColor(value == L"tuf");
+            colorValue.Text(colorLabelOf(value));
+        });
+
+        Expander colorExpander;
+        colorExpander.HorizontalAlignment(HorizontalAlignment::Stretch);
+        colorExpander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+        colorExpander.Header(colorHeader);
+        colorExpander.Content(colorChoice);
+        page.Children().Append(colorExpander);
+
+        // ---------------- 智能关屏（顶栏总开关 + 子项） ----------------
 
         // 子项容器：总开关关闭时整体置灰
         StackPanel powerItemsInner;
@@ -885,8 +994,8 @@ namespace winrt::ScreenControl::implementation
         powerItems.Content(powerItemsInner);
         powerItems.HorizontalContentAlignment(HorizontalAlignment::Stretch);
 
-        auto makePowerItem = [this, &powerItemsInner](wchar_t const* title, wchar_t const* description,
-                                                 bool initial, std::function<void(bool)> persist)
+        auto makePowerItem = [&powerItemsInner](wchar_t const* title, bool initial,
+                                                std::function<void(bool)> persist)
         {
             CheckBox box;
             box.IsChecked(initial);
@@ -905,37 +1014,22 @@ namespace winrt::ScreenControl::implementation
                 }
             });
 
-            StackPanel text;
-            text.Spacing(2);
+            // 子项只要一个名称，不再配说明小字。
             TextBlock titleBlock;
             titleBlock.Text(title);
             titleBlock.TextWrapping(TextWrapping::Wrap);
-            text.Children().Append(titleBlock);
-
-            TextBlock descriptionBlock;
-            descriptionBlock.Text(description);
-            descriptionBlock.FontSize(12);
-            descriptionBlock.TextWrapping(TextWrapping::Wrap);
-            descriptionBlock.Foreground(Application::Current().Resources()
-                                            .Lookup(box_value(L"TextFillColorSecondaryBrush")).as<Brush>());
-            text.Children().Append(descriptionBlock);
-
-            box.Content(text);
+            box.Content(titleBlock);
             powerItemsInner.Children().Append(box);
         };
 
-        makePowerItem(L"关闭程序时关闭水冷屏", L"退出本程序时，同时关闭水冷屏的显示。",
-                      config.powerCloseApp,
+        makePowerItem(L"关闭程序时", config.powerCloseApp,
                       [this](bool value) { AppConfigStore().Data().powerCloseApp = value; AppConfigStore().Save(); });
-        makePowerItem(L"关闭电脑时关闭水冷屏", L"系统关机前关闭显示，避免残留画面。",
-                      config.powerShutdown,
+        makePowerItem(L"关闭电脑时", config.powerShutdown,
                       [this](bool value) { AppConfigStore().Data().powerShutdown = value; AppConfigStore().Save(); });
-        makePowerItem(L"注销时关闭水冷屏", L"注销当前用户时关闭显示。",
-                      config.powerLogout,
-                      [this](bool value) { AppConfigStore().Data().powerLogout = value; AppConfigStore().Save(); });
-        makePowerItem(L"睡眠时关闭水冷屏", L"进入睡眠前关闭显示，唤醒后需重新播放。",
-                      config.powerSleep,
+        makePowerItem(L"睡眠时", config.powerSleep,
                       [this](bool value) { AppConfigStore().Data().powerSleep = value; AppConfigStore().Save(); });
+        makePowerItem(L"注销时", config.powerLogout,
+                      [this](bool value) { AppConfigStore().Data().powerLogout = value; AppConfigStore().Save(); });
 
         // 顶栏：图标 + 标题/说明 + 总开关
         Grid powerHeader;
@@ -954,23 +1048,18 @@ namespace winrt::ScreenControl::implementation
         StackPanel powerText;
         powerText.Spacing(2);
         TextBlock powerTitle;
-        powerTitle.Text(L"电源联动");
+        powerTitle.Text(L"智能关屏");
         powerText.Children().Append(powerTitle);
-        TextBlock powerDescription;
-        powerDescription.Text(L"系统电源或会话事件发生时，自动关闭水冷屏显示");
-        powerDescription.FontSize(12);
-        powerDescription.TextWrapping(TextWrapping::Wrap);
-        powerDescription.Foreground(Application::Current().Resources()
-                                        .Lookup(box_value(L"TextFillColorSecondaryBrush")).as<Brush>());
-        powerText.Children().Append(powerDescription);
         Grid::SetColumn(powerText, 1);
         powerHeader.Children().Append(powerText);
 
         ToggleSwitch powerMaster;
         powerMaster.IsOn(config.powerActions);
         powerMaster.VerticalAlignment(VerticalAlignment::Center);
+        powerMaster.HorizontalAlignment(HorizontalAlignment::Right);
         Grid::SetColumn(powerMaster, 2);
         powerHeader.Children().Append(powerMaster);
+        powerHeader.HorizontalAlignment(HorizontalAlignment::Stretch);
 
         // 总开关关闭时子项灰显（与系统设置页一致）
         powerItems.IsEnabled(config.powerActions);

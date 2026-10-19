@@ -326,6 +326,7 @@ namespace ScreenControl::Core
 
         m_config.autoStart = root[L"auto_start"].AsBool(m_config.autoStart);
         m_config.appTheme = ToLower(root[L"app_theme"].AsString(m_config.appTheme));
+        m_config.themeColor = ToLower(root[L"theme_color"].AsString(m_config.themeColor));
 
         m_config.powerActions = root[L"power_actions"].AsBool(m_config.powerActions);
         m_config.powerCloseApp = root[L"power_close_app"].AsBool(m_config.powerCloseApp);
@@ -376,6 +377,7 @@ namespace ScreenControl::Core
         out << "  \"playback_mode\": \"" << JsonEscape(NarrowUtf8(m_config.playbackMode)) << "\",\n";
         out << "  \"auto_start\": " << (m_config.autoStart ? "true" : "false") << ",\n";
         out << "  \"app_theme\": \"" << JsonEscape(NarrowUtf8(m_config.appTheme)) << "\",\n";
+    out << "  \"theme_color\": \"" << JsonEscape(NarrowUtf8(m_config.themeColor)) << "\",\n";
         out << "  \"power_actions\": " << (m_config.powerActions ? "true" : "false") << ",\n";
         out << "  \"power_close_app\": " << (m_config.powerCloseApp ? "true" : "false") << ",\n";
         out << "  \"power_shutdown\": " << (m_config.powerShutdown ? "true" : "false") << ",\n";

@@ -90,6 +90,11 @@ namespace ScreenControl
                 {
                     Invoke(self->m_handlers.suspend);
                 }
+                else if (wParam == PBT_APMRESUMEAUTOMATIC || wParam == PBT_APMRESUMESUSPEND)
+                {
+                    // 唤醒后按原规则恢复屏幕状态（进入睡眠时可能被关屏）
+                    Invoke(self->m_handlers.resume);
+                }
                 break;
 
             case WM_QUERYENDSESSION:

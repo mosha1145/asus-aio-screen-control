@@ -48,6 +48,9 @@ namespace winrt::ScreenControl::implementation
         /// 启动时把配置里的显示参数与屏幕状态应用到设备。
         void ApplyPersistedDeviceState();
 
+        /// 应用主题色（TUF GAMING 橙 / 系统强调色）。
+        void ApplyThemeColor(bool tufGaming);
+
         /// 把素材目录里的文件填进 ListView。
         void PopulateMediaList(winrt::Microsoft::UI::Xaml::Controls::ListView const& list,
                                std::wstring const& directory,
@@ -66,6 +69,7 @@ namespace winrt::ScreenControl::implementation
         winrt::Microsoft::UI::Xaml::Controls::Image m_previewImage{ nullptr };
         winrt::Microsoft::UI::Xaml::Media::Imaging::SoftwareBitmapSource m_previewSource{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::TextBlock m_previewPlaceholder{ nullptr };
+        std::wstring m_currentTag{ L"display" };
         ::ScreenControl::PowerMonitor m_powerMonitor;
     };
 }

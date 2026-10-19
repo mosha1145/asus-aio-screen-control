@@ -51,6 +51,7 @@ namespace ScreenControl::Core
 
         // ---- 界面（v2 新增） ----
         std::wstring appTheme = L"system";   ///< system / light / dark
+        std::wstring themeColor = L"system"; ///< system / tuf（TUF GAMING 橙色 #FF9E1B）
 
         // ---- 电源联动（本期暂缓，键保留以兼容 v1 配置） ----
         bool powerActions = true;

@@ -31,6 +31,7 @@ namespace ScreenControl
         struct Handlers
         {
             Handler suspend;   ///< 进入睡眠
+            Handler resume;    ///< 从睡眠唤醒
             Handler shutdown;  ///< 关机
             Handler logoff;    ///< 注销
         };
