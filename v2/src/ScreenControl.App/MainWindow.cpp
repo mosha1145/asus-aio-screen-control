@@ -233,33 +233,21 @@ namespace winrt::ScreenControl::implementation
     UIElement MainWindow::MakeSettingsCard(wchar_t const* glyph, hstring const& title,
                                            UIElement const& trailing, UIElement const& body)
     {
-        auto resources = Application::Current().Resources();
-
-        Border card;
-        card.Background(resources.Lookup(box_value(L"CardBackgroundFillColorDefaultBrush")).as<Brush>());
-        card.BorderBrush(resources.Lookup(box_value(L"CardStrokeColorDefaultBrush")).as<Brush>());
-        card.BorderThickness(Thickness{ 1, 1, 1, 1 });
-        card.CornerRadius(CornerRadius{ 8, 8, 8, 8 });
-        card.Padding(Thickness{ 16, 0, 16, 0 });
-
-        StackPanel root;
-        root.Spacing(0);
-
-        // 标题行：图标 | 标题 | 右侧内容 | 展开箭头
+        // 用原生 Expander 作外壳，保留 Fluent 卡片的默认样式与展开动画；
+        // 只把标题行做成可拉伸的 Grid，保证右侧元素贴右、标题垂直居中。
         Grid header;
-        header.MinHeight(54);
+        header.MinHeight(56);
         header.ColumnSpacing(16);
         header.HorizontalAlignment(HorizontalAlignment::Stretch);
         header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
         header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
         header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-        header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
 
         FontIcon icon;
         icon.Glyph(glyph);
         icon.FontSize(16);
-        icon.HorizontalAlignment(HorizontalAlignment::Center);
         icon.VerticalAlignment(VerticalAlignment::Center);
+        icon.HorizontalAlignment(HorizontalAlignment::Center);
         Grid::SetColumn(icon, 0);
         header.Children().Append(icon);
 
@@ -272,49 +260,27 @@ namespace winrt::ScreenControl::implementation
         if (auto element = trailing.try_as<FrameworkElement>())
         {
             element.VerticalAlignment(VerticalAlignment::Center);
+            element.HorizontalAlignment(HorizontalAlignment::Right);
             Grid::SetColumn(element, 2);
             header.Children().Append(element);
         }
 
-        // 展开箭头（无边框按钮）
-        Button chevronButton;
-        chevronButton.Background(SolidColorBrush{ Windows::UI::Colors::Transparent() });
-        chevronButton.BorderThickness(Thickness{ 0, 0, 0, 0 });
-        chevronButton.Padding(Thickness{ 8, 4, 8, 4 });
-        chevronButton.VerticalAlignment(VerticalAlignment::Center);
-        FontIcon chevron;
-        chevron.Glyph(L"\xE70D");   // ChevronDown
-        chevron.FontSize(12);
-        chevronButton.Content(chevron);
-        Grid::SetColumn(chevronButton, 3);
-        header.Children().Append(chevronButton);
-
-        // 内容区（默认折叠）
-        ContentControl bodyHost;
-        bodyHost.Content(body);
-        bodyHost.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-        bodyHost.Visibility(Visibility::Collapsed);
-
-        auto expanded = std::make_shared<bool>(false);
-        chevronButton.Click([chevron, bodyHost, expanded](IInspectable const&, RoutedEventArgs const&)
-        {
-            *expanded = !*expanded;
-            bodyHost.Visibility(*expanded ? Visibility::Visible : Visibility::Collapsed);
-            chevron.Glyph(*expanded ? L"\xE70E" : L"\xE70D");   // Up / Down
-        });
-
-        root.Children().Append(header);
-        root.Children().Append(bodyHost);
-        card.Child(root);
-        return card;
+        Expander expander;
+        expander.HorizontalAlignment(HorizontalAlignment::Stretch);
+        expander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+        expander.Header(header);
+        expander.Content(body);
+        return expander;
     }
+
+
     void MainWindow::ApplyThemeColor(bool tufGaming)
     {
         auto resources = Application::Current().Resources();
 
         if (tufGaming)
         {
-            // TUF GAMING �� #FF9E1B
+            // TUF GAMING orange #FF9E1B
             const auto accent = Windows::UI::ColorHelper::FromArgb(0xFF, 0xFF, 0x9E, 0x1B);
             const auto accentLight = Windows::UI::ColorHelper::FromArgb(0xFF, 0xFF, 0xB3, 0x4D);
             const auto accentDark = Windows::UI::ColorHelper::FromArgb(0xFF, 0xCC, 0x7A, 0x00);
@@ -337,11 +303,6 @@ namespace winrt::ScreenControl::implementation
             }
         }
 
-        // 资源变化不会重绘已创建的元素：重建当前页让新配色生效。
-        if (m_contentFrame)
-        {
-            NavigateTo(m_currentTag);
-        }
     }
     void MainWindow::SetupPowerEvents()
     {
