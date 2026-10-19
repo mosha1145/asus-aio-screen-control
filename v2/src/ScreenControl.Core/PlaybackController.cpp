@@ -211,6 +211,11 @@ namespace ScreenControl::Core
             return;
         }
 
+        // 换素材时必须丢弃上一张照片的编码缓存，否则会继续发送上一张的内容
+        // （表现为"切换照片无效"）。
+        m_photoJpeg.clear();
+        m_photoDirty.store(true);
+
         Notify(L"正在播放：" + path.filename().wstring());
 
         DecodedFrame frame;

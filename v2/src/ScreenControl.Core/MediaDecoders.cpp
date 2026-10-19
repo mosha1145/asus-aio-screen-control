@@ -3,6 +3,9 @@
 
 #include "FrameChunker.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include <wincodec.h>
 #include <wrl/client.h>
 
@@ -187,7 +190,33 @@ namespace ScreenControl::Core
         reader->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), TRUE);
 
         // 要求解码成 RGB32（等价 BGRA）。
-        // 优先请求直接缩放到 320x320：由视频处理器做缩放比我们自己逐像素采样快得多。
+        //
+        // 缩放策略：不能直接压成 320x320 —— 那会把画面比例拉变形，
+        // 导致"图像适应"（contain/cover/stretch）对视频完全不起作用。
+        // 这里按原始宽高比缩放到不超过 640 的框内，比例保持正确，
+        // 再由 FramePipeline 统一做 contain / cover / stretch。
+        UINT32 scaledWidth = 0;
+        UINT32 scaledHeight = 0;
+        {
+            UINT32 nativeWidth = 0;
+            UINT32 nativeHeight = 0;
+            ComPtr<IMFMediaType> nativeType;
+            if (SUCCEEDED(reader->GetNativeMediaType(
+                    static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), 0,
+                    nativeType.GetAddressOf())) && nativeType)
+            {
+                MFGetAttributeSize(nativeType.Get(), MF_MT_FRAME_SIZE, &nativeWidth, &nativeHeight);
+            }
+            if (nativeWidth > 0 && nativeHeight > 0)
+            {
+                const double scale = std::min(640.0 / nativeWidth, 640.0 / nativeHeight);
+                scaledWidth = static_cast<UINT32>(std::lround(nativeWidth * scale));
+                scaledHeight = static_cast<UINT32>(std::lround(nativeHeight * scale));
+                if (scaledWidth < 2) { scaledWidth = 2; }
+                if (scaledHeight < 2) { scaledHeight = 2; }
+            }
+        }
+
         ComPtr<IMFMediaType> requested;
         if (FAILED(MFCreateMediaType(requested.GetAddressOf())))
         {
@@ -196,8 +225,10 @@ namespace ScreenControl::Core
         }
         requested->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
         requested->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
-        MFSetAttributeSize(requested.Get(), MF_MT_FRAME_SIZE,
-                           static_cast<UINT32>(::ScreenControl::Device::kScreenSize), static_cast<UINT32>(::ScreenControl::Device::kScreenSize));
+        if (scaledWidth > 0 && scaledHeight > 0)
+        {
+            MFSetAttributeSize(requested.Get(), MF_MT_FRAME_SIZE, scaledWidth, scaledHeight);
+        }
 
         HRESULT hrSet = reader->SetCurrentMediaType(
             static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), nullptr, requested.Get());
