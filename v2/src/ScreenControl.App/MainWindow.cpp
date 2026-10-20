@@ -52,6 +52,25 @@ namespace winrt::ScreenControl::implementation
             return scroller;
         }
 
+        /// 行为卡片：与下面的 Expander 卡片保持一致的圆角(8)与高度(64)。
+        Border MakeBehaviorCard(UIElement const& child)
+        {
+            Border card;
+            card.CornerRadius(CornerRadius{ 8, 8, 8, 8 });
+            card.Padding(Thickness{ 16, 0, 16, 0 });
+            card.MinHeight(64);
+            card.BorderThickness(Thickness{ 1, 1, 1, 1 });
+            card.BorderBrush(Application::Current().Resources()
+                                 .Lookup(box_value(L"CardStrokeColorDefaultBrush")).as<Brush>());
+            card.Background(Application::Current().Resources()
+                                .Lookup(box_value(L"CardBackgroundFillColorDefaultBrush")).as<Brush>());
+            if (auto element = child.try_as<FrameworkElement>())
+            {
+                element.VerticalAlignment(VerticalAlignment::Center);
+            }
+            card.Child(child);
+            return card;
+        }
         /// 设置页的小节标题（与系统设置页一致：BodyStrong，14px 加粗、主文本色）
         TextBlock MakeSectionTitle(hstring const& text)
         {
@@ -109,13 +128,6 @@ namespace winrt::ScreenControl::implementation
         // 空引用访问冲突（0xC0000005）——这正是之前的启动崩溃原因。
         m_titleBar = Grid{};
         m_contentFrame = Frame{};
-
-        // 页面切换动画：用 NavigationThemeTransition + EntranceNavigationTransitionInfo，
-        // 与 Frame.Navigate 走的是同一套平台默认过渡（NavigationView 也是这个）。
-        Microsoft::UI::Xaml::Media::Animation::NavigationThemeTransition navigation;
-        navigation.DefaultNavigationTransitionInfo(
-            Microsoft::UI::Xaml::Media::Animation::CommonNavigationTransitionInfo{});
-        m_contentFrame.ContentTransitions().Append(navigation);
 
         // 根容器背景留空：一旦设了实色，Mica 就被盖住了。
         Grid root = RootGrid();
@@ -279,6 +291,7 @@ namespace winrt::ScreenControl::implementation
         }
 
         Expander expander;
+        expander.CornerRadius(CornerRadius{ 8, 8, 8, 8 });
         expander.HorizontalAlignment(HorizontalAlignment::Stretch);
         expander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
         expander.Header(header);
@@ -700,14 +713,46 @@ namespace winrt::ScreenControl::implementation
     void MainWindow::NavigateTo(std::wstring const& tag)
     {
         m_currentTag = tag;
-        if (tag == L"settings")
-        {
-            m_contentFrame.Content(BuildSettingsPage());
-        }
-        else
-        {
-            m_contentFrame.Content(BuildDisplayPage());
-        }
+
+        UIElement content = (tag == L"settings") ? BuildSettingsPage() : BuildDisplayPage();
+        m_contentFrame.Content(content);
+
+        // 页面切换动画：淡入 + 轻微上移。
+        // Frame.ContentTransitions 对"直接替换 Content"不生效，这里用 Storyboard 显式做，
+        // 表现与 WinUI 默认导航过渡一致。
+        Microsoft::UI::Xaml::Media::TranslateTransform slide;
+        slide.Y(12.0);
+        content.RenderTransform(slide);
+        content.Opacity(0.0);
+
+        using namespace Microsoft::UI::Xaml::Media::Animation;
+
+        Microsoft::UI::Xaml::Duration duration;
+        duration.TimeSpan = Windows::Foundation::TimeSpan{ std::chrono::milliseconds(220) };
+        duration.Type = Microsoft::UI::Xaml::DurationType::TimeSpan;
+
+        CubicEase ease;
+        ease.EasingMode(EasingMode::EaseOut);
+
+        DoubleAnimation fade;
+        fade.From(0.0);
+        fade.To(1.0);
+        fade.Duration(duration);
+        Storyboard::SetTarget(fade, content);
+        Storyboard::SetTargetProperty(fade, L"Opacity");
+
+        DoubleAnimation move;
+        move.From(12.0);
+        move.To(0.0);
+        move.Duration(duration);
+        move.EasingFunction(ease);
+        Storyboard::SetTarget(move, slide);
+        Storyboard::SetTargetProperty(move, L"Y");
+
+        Storyboard storyboard;
+        storyboard.Children().Append(fade);
+        storyboard.Children().Append(move);
+        storyboard.Begin();
     }
 
     UIElement MainWindow::BuildDisplayPage()
@@ -1106,7 +1151,7 @@ namespace winrt::ScreenControl::implementation
     UIElement MainWindow::BuildSettingsPage()
     {
         StackPanel page;
-        page.Spacing(12);
+        page.Spacing(4);
         page.Margin(Thickness{ 24, 8, 24, 24 });
 
         page.Children().Append(MakeTitle(L"设置"));
@@ -1120,7 +1165,6 @@ namespace winrt::ScreenControl::implementation
         autoStart.HorizontalAlignment(HorizontalAlignment::Right);
 
         Grid autoStartRow;
-        autoStartRow.MinHeight(32);
         autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
         autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
         autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
@@ -1143,7 +1187,6 @@ namespace winrt::ScreenControl::implementation
         autoStartRow.Children().Append(autoStart);
         // 关闭窗口时的行为（下拉选择，与开机自启动同一张卡）
         Grid closeRow;
-        closeRow.MinHeight(32);
         closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
         closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
         closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
@@ -1231,8 +1274,8 @@ namespace winrt::ScreenControl::implementation
 
         // 「常规」与「个性化」拆成两张卡：开机自启属于启动行为，主题属于外观，不应混在一起。
         page.Children().Append(MakeSectionTitle(L"应用行为"));
-        page.Children().Append(MakeCard(autoStartRow));
-        page.Children().Append(MakeCard(closeRow));
+        page.Children().Append(MakeBehaviorCard(autoStartRow));
+        page.Children().Append(MakeBehaviorCard(closeRow));
         page.Children().Append(MakeSectionTitle(L"个性化"));
 
         // Expander 自身就是一张卡片，不再额外套一层 MakeCard，
@@ -1347,22 +1390,6 @@ namespace winrt::ScreenControl::implementation
         // 同一个 UIElement 被挂到两处 -> XAML 抛 E_INVALIDARG（"参数错误"）导致闪退。
         page.Children().Append(MakeSettingsCard(L"\xE7E8", L"智能关屏", powerMaster, powerItems));
 
-        StackPanel deferred;
-        deferred.Spacing(12);
-        InfoBar deferredInfo;
-        deferredInfo.IsOpen(true);
-        deferredInfo.IsClosable(false);
-        deferredInfo.Severity(InfoBarSeverity::Informational);
-        deferredInfo.Title(L"以下功能本期不实现");
-        deferredInfo.Message(L"温度/硬件信息监测、系统信息采集、自定义主题、悬浮窗、桌面实时投射、SMTC 媒体封面捕获。相关配置键保留以兼容 v1 配置，界面项在此处灰显占位。");
-        deferred.Children().Append(deferredInfo);
-
-        ToggleSwitch smtcSwitch;
-        smtcSwitch.Header(box_value(L"SMTC 媒体封面捕获（暂缓）"));
-        smtcSwitch.IsEnabled(false);
-        deferred.Children().Append(smtcSwitch);
-
-        page.Children().Append(MakeCard(deferred));
         return MakeScrollable(page);
     }
 }
