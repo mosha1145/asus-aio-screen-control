@@ -128,9 +128,6 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             }
             m_currentTag = tag;
 
-            // 两个页面是平级的，不保留导航历史，避免 BackStack 无限累积
-            m_contentFrame.BackStack().Clear();
-
             using Transition = Microsoft::UI::Xaml::Media::Animation::EntranceNavigationTransitionInfo;
             if (tag == L"settings")
             {
@@ -140,6 +137,11 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             {
                 m_contentFrame.Navigate(xaml_typename<ScreenControl::DisplayPage>(), nullptr, Transition{});
             }
+
+            // 关键：必须在 Navigate 之后清空。
+            // Navigate 会把"上一个页面"压入 BackStack，先清再导航等于没清，
+            // 旧页面（连同它的预览位图）会被一直引用，表现为每次切换内存增长。
+            m_contentFrame.BackStack().Clear();
         });
 
         // 布局：标题栏独占第 0 行，NavigationView 只占第 1 行。
@@ -228,6 +230,13 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
 
                 if (action == L"tray")
                 {
+                    if (!m_trayAvailable)
+                    {
+                        // 托盘图标创建失败（例如进程令牌与 Explorer 不一致被拒绝）时，
+                        // 隐藏窗口会让用户无处找回，退化为直接退出。
+                        m_exiting = true;
+                        return;
+                    }
                     args.Cancel(true);
                     HideToTray();
                 }
@@ -243,7 +252,7 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             });
         }
 
-        m_trayIcon.Add(L"ASUS AIO Screen Control",
+        m_trayAvailable = m_trayIcon.Add(L"ASUS AIO Screen Control",
                        [this]() { ShowFromTray(); },
                        [this]() { ShowTrayMenu(); },
                        ::ScreenControl::SingleInstance::ActivateMessageId(),
@@ -326,7 +335,14 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             {
                 config.closeAction = L"tray";
                 ::ScreenControl::Ui::Config().Save();
-                HideToTray();
+                if (m_trayAvailable)
+                {
+                    HideToTray();
+                }
+                else
+                {
+                    ExitApplication();   // 托盘不可用：直接退出，避免窗口丢失
+                }
             }
             else if (result == ContentDialogResult::Secondary)
             {

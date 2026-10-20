@@ -92,7 +92,7 @@ namespace winrt::ScreenControl::implementation
         winrt::Microsoft::UI::Xaml::Window m_menuHost{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::Border m_menuAnchor{ nullptr };
 
-        bool m_exiting = false;
+        bool m_trayAvailable = false;`r`n        bool m_exiting = false;
         bool m_closePromptOpen = false;
     };
 }
