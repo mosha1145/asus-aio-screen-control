@@ -80,32 +80,9 @@ namespace ScreenControl::Core
             return false;
         }
 
-        // 不再补发黑帧：设备在没有收到新帧时会在约 3 秒后自动回到自带动画，
-        // 这正是期望的行为。主动发黑帧反而会盖住自带动画、也让"残留画面"
-        // 看起来像是我们发过去的。
+        // 只下发开/关屏命令。没有新帧时固件会自己回到自带动画，
+        // 因此这里不做任何"补帧"动作。
         return m_device.SetScreen(on);
-    }
-
-    void PlaybackController::SendBlankFrame()
-    {
-        if (m_blankJpeg.empty())
-        {
-            const int size = m_pipeline.Size();
-            std::vector<std::uint8_t> black(static_cast<size_t>(size) * size * 4, 0);
-            Imaging::FrameView view{ black.data(), size, size, size * 4 };
-            std::vector<std::uint8_t> jpeg;
-            if (!m_pipeline.RenderJpeg(view, Imaging::FitMode::Stretch,
-                                       Imaging::Rotation::Deg0, 85, jpeg))
-            {
-                return;
-            }
-            m_blankJpeg = std::move(jpeg);
-        }
-
-        if (m_device.IsOpen())
-        {
-            m_device.SendFrame(m_blankJpeg, 0);
-        }
     }
 
     // ==================== 参数 ====================
