@@ -52,15 +52,14 @@ namespace winrt::ScreenControl::implementation
             return scroller;
         }
 
-        /// 设置页的小节标题（与系统设置页一致：小号、次要色）
+        /// 设置页的小节标题（与系统设置页一致：BodyStrong，14px 加粗、主文本色）
         TextBlock MakeSectionTitle(hstring const& text)
         {
             TextBlock block;
             block.Text(text);
-            block.FontSize(12);
-            block.Margin(Thickness{ 2, 12, 0, 2 });
-            block.Foreground(Application::Current().Resources()
-                                 .Lookup(box_value(L"TextFillColorSecondaryBrush")).as<Brush>());
+            block.FontSize(14);
+            block.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
+            block.Margin(Thickness{ 2, 16, 0, 6 });
             return block;
         }
         TextBlock MakeTitle(hstring const& text)
@@ -115,7 +114,7 @@ namespace winrt::ScreenControl::implementation
         // 与 Frame.Navigate 走的是同一套平台默认过渡（NavigationView 也是这个）。
         Microsoft::UI::Xaml::Media::Animation::NavigationThemeTransition navigation;
         navigation.DefaultNavigationTransitionInfo(
-            Microsoft::UI::Xaml::Media::Animation::EntranceNavigationTransitionInfo{});
+            Microsoft::UI::Xaml::Media::Animation::CommonNavigationTransitionInfo{});
         m_contentFrame.ContentTransitions().Append(navigation);
 
         // 根容器背景留空：一旦设了实色，Mica 就被盖住了。
@@ -1121,7 +1120,7 @@ namespace winrt::ScreenControl::implementation
         autoStart.HorizontalAlignment(HorizontalAlignment::Right);
 
         Grid autoStartRow;
-        autoStartRow.MinHeight(56);
+        autoStartRow.MinHeight(32);
         autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
         autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
         autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
@@ -1144,7 +1143,7 @@ namespace winrt::ScreenControl::implementation
         autoStartRow.Children().Append(autoStart);
         // 关闭窗口时的行为（下拉选择，与开机自启动同一张卡）
         Grid closeRow;
-        closeRow.MinHeight(56);
+        closeRow.MinHeight(32);
         closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
         closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
         closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
