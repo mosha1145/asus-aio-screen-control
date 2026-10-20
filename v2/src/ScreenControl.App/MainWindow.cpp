@@ -128,6 +128,9 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             }
             m_currentTag = tag;
 
+            // 两个页面是平级的，不保留导航历史，避免 BackStack 无限累积
+            m_contentFrame.BackStack().Clear();
+
             using Transition = Microsoft::UI::Xaml::Media::Animation::EntranceNavigationTransitionInfo;
             if (tag == L"settings")
             {

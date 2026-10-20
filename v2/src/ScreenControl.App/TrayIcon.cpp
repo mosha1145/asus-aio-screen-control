@@ -103,7 +103,6 @@ namespace ScreenControl
         windowClass.lpszClassName = kTrayWindowClass;
         ::RegisterClassExW(&windowClass);   // 重复注册会失败，忽略即可
 
-        const DWORD classError = ::GetLastError();
         // 注意：不能用 HWND_MESSAGE（message-only 窗口）。
         // 实测 message-only 窗口下 Shell_NotifyIcon 返回 ERROR_ACCESS_DENIED，
         // 托盘图标根本加不进去。这里改用隐藏的顶层工具窗口。
