@@ -40,10 +40,20 @@ namespace ScreenControl
     void SingleInstance::BroadcastActivate()
     {
         const UINT message = ActivateMessageId();
-        if (message != 0)
+        if (message == 0)
         {
-            ::PostMessageW(HWND_BROADCAST, message, 0, 0);
+            return;
         }
+
+        // 广播只会送达顶层窗口，且某些情况下会被过滤；
+        // 这里再直接按窗口标题定位主窗口投递一次，可靠得多
+        // （窗口隐藏时依然是顶层窗口，照样能收到）。
+        if (HWND hwnd = ::FindWindowW(nullptr, L"ASUS AIO Screen Control"))
+        {
+            ::PostMessageW(hwnd, message, 0, 0);
+        }
+
+        ::PostMessageW(HWND_BROADCAST, message, 0, 0);
     }
 
     void SingleInstance::Release() noexcept

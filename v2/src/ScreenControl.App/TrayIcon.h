@@ -44,6 +44,7 @@ namespace ScreenControl
 
         HWND m_window = nullptr;
         HICON m_icon = nullptr;
+        std::wstring m_tooltip;
         Handler m_onOpen;
         Handler m_onMenu;
     };

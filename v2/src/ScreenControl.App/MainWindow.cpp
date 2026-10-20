@@ -52,6 +52,17 @@ namespace winrt::ScreenControl::implementation
             return scroller;
         }
 
+        /// 设置页的小节标题（与系统设置页一致：小号、次要色）
+        TextBlock MakeSectionTitle(hstring const& text)
+        {
+            TextBlock block;
+            block.Text(text);
+            block.FontSize(12);
+            block.Margin(Thickness{ 2, 12, 0, 2 });
+            block.Foreground(Application::Current().Resources()
+                                 .Lookup(box_value(L"TextFillColorSecondaryBrush")).as<Brush>());
+            return block;
+        }
         TextBlock MakeTitle(hstring const& text)
         {
             TextBlock block;
@@ -362,7 +373,7 @@ namespace winrt::ScreenControl::implementation
         dialog.Content(box_value(L"关闭主窗口后，程序可以继续在系统托盘运行，水冷屏显示不会中断。"));
         dialog.PrimaryButtonText(L"隐藏到系统托盘");
         dialog.SecondaryButtonText(L"退出程序");
-        dialog.CloseButtonText(L"每次关闭前询问");
+        dialog.CloseButtonText(L"取消");
         dialog.DefaultButton(ContentDialogButton::Primary);
 
         auto operation = dialog.ShowAsync();
@@ -1101,9 +1112,6 @@ namespace winrt::ScreenControl::implementation
 
         page.Children().Append(MakeTitle(L"设置"));
 
-        StackPanel general;
-        general.Spacing(14);
-
         // 开机自启动：左侧文本、右侧开关（与系统设置页的条目一致，开关不显示文字）
         ToggleSwitch autoStart;
         autoStart.MinWidth(0);
@@ -1113,7 +1121,7 @@ namespace winrt::ScreenControl::implementation
         autoStart.HorizontalAlignment(HorizontalAlignment::Right);
 
         Grid autoStartRow;
-        autoStartRow.MinHeight(64);
+        autoStartRow.MinHeight(56);
         autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
         autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
         autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
@@ -1134,11 +1142,9 @@ namespace winrt::ScreenControl::implementation
 
         Grid::SetColumn(autoStart, 2);
         autoStartRow.Children().Append(autoStart);
-
-        general.Children().Append(autoStartRow);
         // 关闭窗口时的行为（下拉选择，与开机自启动同一张卡）
         Grid closeRow;
-        closeRow.MinHeight(64);
+        closeRow.MinHeight(56);
         closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
         closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
         closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
@@ -1162,16 +1168,14 @@ namespace winrt::ScreenControl::implementation
         closeChoice.VerticalAlignment(VerticalAlignment::Center);
         closeChoice.Items().Append(box_value(L"隐藏到系统托盘"));
         closeChoice.Items().Append(box_value(L"退出程序"));
-        closeChoice.Items().Append(box_value(L"每次关闭前询问"));
+
 
         auto const& closeConfig = AppConfigStore().Data();
-        closeChoice.SelectedIndex(closeConfig.closeAction == L"tray" ? 0
-                                  : (closeConfig.closeAction == L"exit" ? 1 : 2));
+        closeChoice.SelectedIndex(closeConfig.closeAction == L"exit" ? 1 : 0);
 
         closeChoice.SelectionChanged([this, closeChoice](IInspectable const&, SelectionChangedEventArgs const&)
         {
-            const std::wstring value = closeChoice.SelectedIndex() == 0 ? L"tray"
-                                     : (closeChoice.SelectedIndex() == 1 ? L"exit" : L"ask");
+            const std::wstring value = closeChoice.SelectedIndex() == 1 ? L"exit" : L"tray";
             auto& config = AppConfigStore().Data();
             config.closeAction = value;
             AppConfigStore().Save();
@@ -1179,7 +1183,6 @@ namespace winrt::ScreenControl::implementation
 
         Grid::SetColumn(closeChoice, 2);
         closeRow.Children().Append(closeChoice);
-        general.Children().Append(closeRow);
 
         // 主题：参考系统设置页的做法 —— 可展开条目，标题行左侧图标 + 名称、
         // 右侧显示当前选项；展开后三选一。顺序按参考图：浅色 / 深色 / 使用系统设置。
@@ -1228,7 +1231,10 @@ namespace winrt::ScreenControl::implementation
 
 
         // 「常规」与「个性化」拆成两张卡：开机自启属于启动行为，主题属于外观，不应混在一起。
-        page.Children().Append(MakeCard(general));
+        page.Children().Append(MakeSectionTitle(L"应用行为"));
+        page.Children().Append(MakeCard(autoStartRow));
+        page.Children().Append(MakeCard(closeRow));
+        page.Children().Append(MakeSectionTitle(L"个性化"));
 
         // Expander 自身就是一张卡片，不再额外套一层 MakeCard，
         // 否则会出现双层边框与多余内边距（也就是"多包了一层"）。

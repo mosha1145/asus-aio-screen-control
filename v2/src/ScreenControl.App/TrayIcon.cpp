@@ -13,6 +13,13 @@ namespace ScreenControl
         constexpr UINT kTrayCallbackMessage = WM_APP + 101;
         constexpr UINT kTrayIconId = 1;
 
+        /// 资源管理器重启后需要重新添加图标
+        UINT TaskbarCreatedMessage() noexcept
+        {
+            static const UINT id = ::RegisterWindowMessageW(L"TaskbarCreated");
+            return id;
+        }
+
         /// 取当前 exe 的图标（用户要求"用现有的程序图标"）。
         HICON LoadApplicationIcon() noexcept
         {
@@ -49,6 +56,7 @@ namespace ScreenControl
     {
         Remove();
 
+        m_tooltip = tooltip;
         m_onOpen = std::move(onOpen);
         m_onMenu = std::move(onMenu);
 
@@ -73,7 +81,7 @@ namespace ScreenControl
         data.cbSize = sizeof(data);
         data.hWnd = m_window;
         data.uID = kTrayIconId;
-        data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+        data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
         data.uCallbackMessage = kTrayCallbackMessage;
         data.hIcon = m_icon;
         wcsncpy_s(data.szTip, tooltip.c_str(), _TRUNCATE);
@@ -141,6 +149,27 @@ namespace ScreenControl
                 default:
                     break;
                 }
+            }
+            return 0;
+        }
+
+        if (message == TaskbarCreatedMessage())
+        {
+            // 资源管理器重启后托盘区会清空，这里把图标加回去
+            auto* self = reinterpret_cast<TrayIcon*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+            if (self != nullptr && self->m_icon != nullptr)
+            {
+                NOTIFYICONDATAW data{};
+                data.cbSize = sizeof(data);
+                data.hWnd = hwnd;
+                data.uID = kTrayIconId;
+                data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
+                data.uCallbackMessage = kTrayCallbackMessage;
+                data.hIcon = self->m_icon;
+                wcsncpy_s(data.szTip, self->m_tooltip.c_str(), _TRUNCATE);
+                ::Shell_NotifyIconW(NIM_ADD, &data);
+                data.uVersion = NOTIFYICON_VERSION_4;
+                ::Shell_NotifyIconW(NIM_SETVERSION, &data);
             }
             return 0;
         }
