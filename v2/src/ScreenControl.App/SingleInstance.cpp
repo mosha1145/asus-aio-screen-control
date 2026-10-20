@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "SingleInstance.h"
 
+#include <filesystem>
+#include <fstream>
+
 namespace ScreenControl
 {
     namespace
@@ -48,7 +51,16 @@ namespace ScreenControl
         // 广播只会送达顶层窗口，且某些情况下会被过滤；
         // 这里再直接按窗口标题定位主窗口投递一次，可靠得多
         // （窗口隐藏时依然是顶层窗口，照样能收到）。
-        if (HWND hwnd = ::FindWindowW(nullptr, L"ASUS AIO Screen Control"))
+        wchar_t modulePath[MAX_PATH]{};
+        ::GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
+        const std::filesystem::path logPath =
+            std::filesystem::path(modulePath).parent_path() / L"tray_debug.log";
+        HWND hwnd = ::FindWindowW(L"ScreenControl.TrayWindow", nullptr);
+        {
+            std::ofstream log(logPath, std::ios::app);
+            log << "SingleInstance: second instance, hwnd=" << (hwnd == nullptr ? "null" : "found") << std::endl;
+        }
+        if (hwnd != nullptr)
         {
             ::PostMessageW(hwnd, message, 0, 0);
         }

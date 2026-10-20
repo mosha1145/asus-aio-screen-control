@@ -32,7 +32,8 @@ namespace ScreenControl
         TrayIcon& operator=(TrayIcon const&) = delete;
 
         /// 创建并显示托盘图标。图标取当前 exe 的图标。
-        bool Add(std::wstring const& tooltip, Handler onOpen, Handler onMenu);
+        bool Add(std::wstring const& tooltip, Handler onOpen, Handler onMenu,
+                 UINT activateMessage = 0, Handler onActivate = nullptr);
 
         void Remove() noexcept;
 
@@ -40,12 +41,17 @@ namespace ScreenControl
         static POINT CursorPosition() noexcept;
 
     private:
+        void RetryAdd() noexcept;
+
         static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
         HWND m_window = nullptr;
         HICON m_icon = nullptr;
         std::wstring m_tooltip;
+        UINT m_activateMessage = 0;
         Handler m_onOpen;
+        Handler m_onActivate;
+        int m_retryCount = 0;
         Handler m_onMenu;
     };
 }

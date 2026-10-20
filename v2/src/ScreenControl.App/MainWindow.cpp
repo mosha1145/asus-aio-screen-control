@@ -18,6 +18,7 @@
 #include <winrt/Windows.Graphics.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #include <functional>
+#include <fstream>
 #include <memory>
 
 using namespace winrt;
@@ -56,7 +57,7 @@ namespace winrt::ScreenControl::implementation
         Border MakeBehaviorCard(UIElement const& child)
         {
             Border card;
-            card.CornerRadius(CornerRadius{ 8, 8, 8, 8 });
+            card.CornerRadius(CornerRadius{ 4, 4, 4, 4 });
             card.Padding(Thickness{ 16, 0, 16, 0 });
             card.MinHeight(64);
             card.BorderThickness(Thickness{ 1, 1, 1, 1 });
@@ -94,7 +95,7 @@ namespace winrt::ScreenControl::implementation
         Border MakeCard(UIElement const& child)
         {
             Border card;
-            card.CornerRadius(CornerRadius{ 8, 8, 8, 8 });
+            card.CornerRadius(CornerRadius{ 4, 4, 4, 4 });
             card.Padding(Thickness{ 16, 16, 16, 16 });
             card.BorderThickness(Thickness{ 1, 1, 1, 1 });
             card.BorderBrush(Application::Current().Resources()
@@ -291,7 +292,7 @@ namespace winrt::ScreenControl::implementation
         }
 
         Expander expander;
-        expander.CornerRadius(CornerRadius{ 8, 8, 8, 8 });
+        expander.CornerRadius(CornerRadius{ 4, 4, 4, 4 });
         expander.HorizontalAlignment(HorizontalAlignment::Stretch);
         expander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
         expander.Header(header);
@@ -339,7 +340,9 @@ namespace winrt::ScreenControl::implementation
 
         m_trayIcon.Add(L"ASUS AIO Screen Control",
                        [this]() { ShowFromTray(); },
-                       [this]() { ShowTrayMenu(); });
+                       [this]() { ShowTrayMenu(); },
+                       ::ScreenControl::SingleInstance::ActivateMessageId(),
+                       [this]() { ShowFromTray(); });
     }
 
     void MainWindow::HideToTray()
@@ -352,6 +355,15 @@ namespace winrt::ScreenControl::implementation
 
     void MainWindow::ShowFromTray()
     {
+        // 诊断：把每次唤醒的调用记录到 tray_debug.log
+        {
+            wchar_t modulePath[MAX_PATH]{};
+            ::GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
+            std::ofstream log(std::filesystem::path(modulePath).parent_path() / L"tray_debug.log",
+                              std::ios::app);
+            log << "ShowFromTray called" << std::endl;
+        }
+
         if (auto appWindow = AppWindow())
         {
             appWindow.Show();
@@ -360,6 +372,8 @@ namespace winrt::ScreenControl::implementation
         if (HWND hwnd = GetHwnd())
         {
             ::SetForegroundWindow(hwnd);
+            ::ShowWindow(hwnd, SW_SHOW);
+            ::ShowWindow(hwnd, SW_RESTORE);
         }
     }
 
@@ -426,6 +440,12 @@ namespace winrt::ScreenControl::implementation
     void MainWindow::ExitApplication()
     {
         m_exiting = true;
+
+        // 先隐藏窗口：直接关闭会有一帧白底闪现
+        if (auto appWindow = AppWindow())
+        {
+            appWindow.Hide();
+        }
         m_trayIcon.Remove();
 
         if (m_player)
@@ -721,7 +741,7 @@ namespace winrt::ScreenControl::implementation
         // Frame.ContentTransitions 对"直接替换 Content"不生效，这里用 Storyboard 显式做，
         // 表现与 WinUI 默认导航过渡一致。
         Microsoft::UI::Xaml::Media::TranslateTransform slide;
-        slide.Y(12.0);
+        slide.Y(28.0);
         content.RenderTransform(slide);
         content.Opacity(0.0);
 
@@ -731,8 +751,9 @@ namespace winrt::ScreenControl::implementation
         duration.TimeSpan = Windows::Foundation::TimeSpan{ std::chrono::milliseconds(220) };
         duration.Type = Microsoft::UI::Xaml::DurationType::TimeSpan;
 
-        CubicEase ease;
+        ExponentialEase ease;
         ease.EasingMode(EasingMode::EaseOut);
+        ease.Exponent(6.0);
 
         DoubleAnimation fade;
         fade.From(0.0);
@@ -742,7 +763,7 @@ namespace winrt::ScreenControl::implementation
         Storyboard::SetTargetProperty(fade, L"Opacity");
 
         DoubleAnimation move;
-        move.From(12.0);
+        move.From(28.0);
         move.To(0.0);
         move.Duration(duration);
         move.EasingFunction(ease);
