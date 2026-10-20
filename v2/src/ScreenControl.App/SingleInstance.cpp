@@ -57,7 +57,7 @@ namespace ScreenControl
             std::filesystem::path(modulePath).parent_path() / L"tray_debug.log";
         HWND hwnd = ::FindWindowW(L"ScreenControl.TrayWindow", nullptr);
         {
-            std::ofstream log(logPath, std::ios::app);
+            std::ofstream log(logPath, std::ios::binary | std::ios::app);
             log << "SingleInstance: second instance, hwnd=" << (hwnd == nullptr ? "null" : "found") << std::endl;
         }
         if (hwnd != nullptr)

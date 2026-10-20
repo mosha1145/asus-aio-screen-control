@@ -40,6 +40,8 @@
 // App.xaml.g.h / MainWindow.xaml.g.h 由 MarkupCompilePass1 在 ClCompile 之前生成。
 #include "App.h"
 #include "MainWindow.h"
+#include "DisplayPage.xaml.h"
+#include "SettingsPage.xaml.h"
 // XAML 编译器生成的 XamlMetaDataProvider.h 定义 implementation::XamlMetaDataProvider
 // （GetXamlType/GetXmlnsDefinitions），XamlTypeInfo.g.cpp 与
 // XamlMetaDataProvider.g.cpp（winrt_make 工厂）都依赖它。

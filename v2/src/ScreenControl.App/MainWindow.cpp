@@ -8,6 +8,9 @@
 
 #include "AppConfig.h"
 #include "PlaybackController.h"
+#include "UiHelpers.h"
+#include "DisplayPage.xaml.h"
+#include "SettingsPage.xaml.h"
 
 #include <filesystem>
 #include <vector>
@@ -28,86 +31,9 @@ using namespace Microsoft::UI::Xaml::Media;
 
 namespace winrt::ScreenControl::implementation
 {
-    namespace
-    {
-        /// 全局配置（首次访问时加载，含 v1 -> v2 迁移）。主题等设置经它持久化。
-        ::ScreenControl::Core::ConfigStore& AppConfigStore()
-        {
-            static ::ScreenControl::Core::ConfigStore store = []()
-            {
-                ::ScreenControl::Core::ConfigStore s;
-                s.Load();
-                return s;
-            }();
-            return store;
-        }
 
-        /// 把页面内容包进可滚动容器。
-        /// 窗口变小时页面不会被裁剪，而是出现纵向滚动条。
-        ScrollViewer MakeScrollable(UIElement const& content)
-        {
-            ScrollViewer scroller;
-            scroller.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
-            scroller.HorizontalScrollBarVisibility(ScrollBarVisibility::Disabled);
-            scroller.Content(content);
-            return scroller;
-        }
+static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
 
-        /// 行为卡片：与下面的 Expander 卡片保持一致的圆角(8)与高度(64)。
-        Border MakeBehaviorCard(UIElement const& child)
-        {
-            Border card;
-            card.CornerRadius(CornerRadius{ 4, 4, 4, 4 });
-            card.Padding(Thickness{ 16, 0, 16, 0 });
-            card.MinHeight(64);
-            card.BorderThickness(Thickness{ 1, 1, 1, 1 });
-            card.BorderBrush(Application::Current().Resources()
-                                 .Lookup(box_value(L"CardStrokeColorDefaultBrush")).as<Brush>());
-            card.Background(Application::Current().Resources()
-                                .Lookup(box_value(L"CardBackgroundFillColorDefaultBrush")).as<Brush>());
-            if (auto element = child.try_as<FrameworkElement>())
-            {
-                element.VerticalAlignment(VerticalAlignment::Center);
-            }
-            card.Child(child);
-            return card;
-        }
-        /// 设置页的小节标题（与系统设置页一致：BodyStrong，14px 加粗、主文本色）
-        TextBlock MakeSectionTitle(hstring const& text)
-        {
-            TextBlock block;
-            block.Text(text);
-            block.FontSize(14);
-            block.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
-            block.Margin(Thickness{ 2, 16, 0, 6 });
-            return block;
-        }
-        TextBlock MakeTitle(hstring const& text)
-        {
-            TextBlock block;
-            block.Text(text);
-            block.FontSize(24);
-            block.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
-            block.Margin(Thickness{ 0, 0, 0, 8 });
-            return block;
-        }
-
-        Border MakeCard(UIElement const& child)
-        {
-            Border card;
-            card.CornerRadius(CornerRadius{ 4, 4, 4, 4 });
-            card.Padding(Thickness{ 16, 16, 16, 16 });
-            card.BorderThickness(Thickness{ 1, 1, 1, 1 });
-            card.BorderBrush(Application::Current().Resources()
-                                 .Lookup(box_value(L"CardStrokeColorDefaultBrush"))
-                                 .as<Brush>());
-            card.Background(Application::Current().Resources()
-                                .Lookup(box_value(L"CardBackgroundFillColorDefaultBrush"))
-                                .as<Brush>());
-            card.Child(child);
-            return card;
-        }
-    }
 
     int32_t MainWindow::MyProperty()
     {
@@ -127,6 +53,8 @@ namespace winrt::ScreenControl::implementation
         // 重要：m_titleBar / m_contentFrame 在头文件里初始化为 nullptr，
         // 必须在这里先实例化，否则后续对它们调用任何成员都会导致
         // 空引用访问冲突（0xC0000005）——这正是之前的启动崩溃原因。
+        s_current = this;
+
         m_titleBar = Grid{};
         m_contentFrame = Frame{};
 
@@ -187,9 +115,27 @@ namespace winrt::ScreenControl::implementation
 
         nav.SelectionChanged([this](NavigationView const&, NavigationViewSelectionChangedEventArgs const& args)
         {
-            if (auto item = args.SelectedItem().try_as<NavigationViewItem>())
+            auto item = args.SelectedItem().try_as<NavigationViewItem>();
+            if (!item)
             {
-                NavigateTo(std::wstring{ unbox_value<hstring>(item.Tag()).c_str() });
+                return;
+            }
+
+            const std::wstring tag{ unbox_value<hstring>(item.Tag()).c_str() };
+            if (!m_currentTag.empty() && tag == m_currentTag)
+            {
+                return;   // 判重：同一个页面不重复导航
+            }
+            m_currentTag = tag;
+
+            using Transition = Microsoft::UI::Xaml::Media::Animation::EntranceNavigationTransitionInfo;
+            if (tag == L"settings")
+            {
+                m_contentFrame.Navigate(xaml_typename<ScreenControl::SettingsPage>(), nullptr, Transition{});
+            }
+            else
+            {
+                m_contentFrame.Navigate(xaml_typename<ScreenControl::DisplayPage>(), nullptr, Transition{});
             }
         });
 
@@ -204,11 +150,10 @@ namespace winrt::ScreenControl::implementation
         Title(L"ASUS AIO Screen Control");
 
         SetupBackdropAndTitleBar();
-        NavigateTo(L"display");
         nav.SelectedItem(itemDisplay);
 
         // 启动时按配置恢复主题（含「跟随系统」）。
-        m_theme = ::ScreenControl::NativeTheme::Parse(AppConfigStore().Data().appTheme);
+        m_theme = ::ScreenControl::NativeTheme::Parse(::ScreenControl::Ui::Config().Data().appTheme);
         ApplyTheme(m_theme, false);
 
         // 恢复上次的显示参数与屏幕开关状态
@@ -223,7 +168,7 @@ namespace winrt::ScreenControl::implementation
 
     void MainWindow::ApplyPersistedDeviceState()
     {
-        auto& config = AppConfigStore().Data();
+        auto& config = ::ScreenControl::Ui::Config().Data();
 
         auto params = Player().Params();
         if (config.fitMode == L"cover")
@@ -256,49 +201,6 @@ namespace winrt::ScreenControl::implementation
         Player().SetBrightness(config.brightness);
         Player().SetScreenPower(config.screenOn);
     }
-    UIElement MainWindow::MakeSettingsCard(wchar_t const* glyph, hstring const& title,
-                                           UIElement const& trailing, UIElement const& body)
-    {
-        // 用原生 Expander 作外壳，保留 Fluent 卡片的默认样式与展开动画；
-        // 只把标题行做成可拉伸的 Grid，保证右侧元素贴右、标题垂直居中。
-        Grid header;
-        header.MinHeight(64);
-        header.ColumnSpacing(16);
-        header.HorizontalAlignment(HorizontalAlignment::Stretch);
-        header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-        header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
-        header.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-
-        FontIcon icon;
-        icon.Glyph(glyph);
-        icon.FontSize(16);
-        icon.VerticalAlignment(VerticalAlignment::Center);
-        icon.HorizontalAlignment(HorizontalAlignment::Center);
-        Grid::SetColumn(icon, 0);
-        header.Children().Append(icon);
-
-        TextBlock titleBlock;
-        titleBlock.Text(title);
-        titleBlock.VerticalAlignment(VerticalAlignment::Center);
-        Grid::SetColumn(titleBlock, 1);
-        header.Children().Append(titleBlock);
-
-        if (auto element = trailing.try_as<FrameworkElement>())
-        {
-            element.VerticalAlignment(VerticalAlignment::Center);
-            element.HorizontalAlignment(HorizontalAlignment::Right);
-            Grid::SetColumn(element, 2);
-            header.Children().Append(element);
-        }
-
-        Expander expander;
-        expander.CornerRadius(CornerRadius{ 4, 4, 4, 4 });
-        expander.HorizontalAlignment(HorizontalAlignment::Stretch);
-        expander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-        expander.Header(header);
-        expander.Content(body);
-        return expander;
-    }
 
 
     void MainWindow::SetupTrayAndCloseBehavior()
@@ -314,7 +216,7 @@ namespace winrt::ScreenControl::implementation
                     return;   // 真退出：放行，交给 Closed 处理
                 }
 
-                auto& config = AppConfigStore().Data();
+                auto& config = ::ScreenControl::Ui::Config().Data();
                 std::wstring action = config.closeAction;
                 if (!config.closePromptShown)
                 {
@@ -413,26 +315,26 @@ namespace winrt::ScreenControl::implementation
                 result = op.GetResults();
             }
 
-            auto& config = AppConfigStore().Data();
+            auto& config = ::ScreenControl::Ui::Config().Data();
             config.closePromptShown = true;
 
 
             if (result == ContentDialogResult::Primary)
             {
                 config.closeAction = L"tray";
-                AppConfigStore().Save();
+                ::ScreenControl::Ui::Config().Save();
                 HideToTray();
             }
             else if (result == ContentDialogResult::Secondary)
             {
                 config.closeAction = L"exit";
-                AppConfigStore().Save();
+                ::ScreenControl::Ui::Config().Save();
                 ExitApplication();
             }
             else
             {
                 config.closeAction = L"ask";
-                AppConfigStore().Save();
+                ::ScreenControl::Ui::Config().Save();
             }
         });
     }
@@ -450,7 +352,7 @@ namespace winrt::ScreenControl::implementation
 
         if (m_player)
         {
-            auto const& config = AppConfigStore().Data();
+            auto const& config = ::ScreenControl::Ui::Config().Data();
             if (config.powerActions && config.powerCloseApp)
             {
                 m_player->SetScreenPower(false);
@@ -569,7 +471,7 @@ namespace winrt::ScreenControl::implementation
 
         handlers.suspend = [this, turnOffScreen]()
         {
-            auto const& cfg = AppConfigStore().Data();
+            auto const& cfg = ::ScreenControl::Ui::Config().Data();
             if (cfg.powerActions && cfg.powerSleep)
             {
                 turnOffScreen();
@@ -578,7 +480,7 @@ namespace winrt::ScreenControl::implementation
 
         handlers.shutdown = [this, turnOffScreen]()
         {
-            auto const& cfg = AppConfigStore().Data();
+            auto const& cfg = ::ScreenControl::Ui::Config().Data();
             if (cfg.powerActions && cfg.powerShutdown)
             {
                 turnOffScreen();
@@ -591,13 +493,13 @@ namespace winrt::ScreenControl::implementation
             // 睡眠时可能已被关屏，这里重新下发开屏命令。
             if (m_player)
             {
-                m_player->SetScreenPower(AppConfigStore().Data().screenOn);
+                m_player->SetScreenPower(::ScreenControl::Ui::Config().Data().screenOn);
             }
         };
 
         handlers.logoff = [this, turnOffScreen]()
         {
-            auto const& cfg = AppConfigStore().Data();
+            auto const& cfg = ::ScreenControl::Ui::Config().Data();
             if (cfg.powerActions && cfg.powerLogout)
             {
                 turnOffScreen();
@@ -613,7 +515,7 @@ namespace winrt::ScreenControl::implementation
         // 关闭程序时关屏（对应 v1 的 power_close_app）
         Closed([this, turnOffScreen](auto&&, auto&&)
         {
-            auto const& cfg = AppConfigStore().Data();
+            auto const& cfg = ::ScreenControl::Ui::Config().Data();
             if (cfg.powerActions && cfg.powerCloseApp)
             {
                 turnOffScreen();
@@ -704,8 +606,8 @@ namespace winrt::ScreenControl::implementation
         // 4) 持久化
         if (persist)
         {
-            AppConfigStore().Data().appTheme = ::ScreenControl::NativeTheme::ToString(theme);
-            AppConfigStore().Save();
+            ::ScreenControl::Ui::Config().Data().appTheme = ::ScreenControl::NativeTheme::ToString(theme);
+            ::ScreenControl::Ui::Config().Save();
         }
     }
 
@@ -730,296 +632,6 @@ namespace winrt::ScreenControl::implementation
         SystemBackdrop(MicaBackdrop{});
     }
 
-    void MainWindow::NavigateTo(std::wstring const& tag)
-    {
-        m_currentTag = tag;
-
-        UIElement content = (tag == L"settings") ? BuildSettingsPage() : BuildDisplayPage();
-        m_contentFrame.Content(content);
-
-        // 页面切换动画：淡入 + 轻微上移。
-        // Frame.ContentTransitions 对"直接替换 Content"不生效，这里用 Storyboard 显式做，
-        // 表现与 WinUI 默认导航过渡一致。
-        Microsoft::UI::Xaml::Media::TranslateTransform slide;
-        slide.Y(28.0);
-        content.RenderTransform(slide);
-        content.Opacity(0.0);
-
-        using namespace Microsoft::UI::Xaml::Media::Animation;
-
-        Microsoft::UI::Xaml::Duration duration;
-        duration.TimeSpan = Windows::Foundation::TimeSpan{ std::chrono::milliseconds(220) };
-        duration.Type = Microsoft::UI::Xaml::DurationType::TimeSpan;
-
-        ExponentialEase ease;
-        ease.EasingMode(EasingMode::EaseOut);
-        ease.Exponent(6.0);
-
-        DoubleAnimation fade;
-        fade.From(0.0);
-        fade.To(1.0);
-        fade.Duration(duration);
-        Storyboard::SetTarget(fade, content);
-        Storyboard::SetTargetProperty(fade, L"Opacity");
-
-        DoubleAnimation move;
-        move.From(28.0);
-        move.To(0.0);
-        move.Duration(duration);
-        move.EasingFunction(ease);
-        Storyboard::SetTarget(move, slide);
-        Storyboard::SetTargetProperty(move, L"Y");
-
-        Storyboard storyboard;
-        storyboard.Children().Append(fade);
-        storyboard.Children().Append(move);
-        storyboard.Begin();
-    }
-
-    UIElement MainWindow::BuildDisplayPage()
-    {
-        StackPanel page;
-        page.Spacing(16);
-        page.Margin(Thickness{ 24, 8, 24, 24 });
-
-        page.Children().Append(MakeTitle(L"主控"));
-
-        Grid body;
-        body.ColumnSpacing(16);
-        body.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-        body.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
-
-        // 左侧：预览框（水冷屏是 1:1 的 320x320）
-        Border preview;
-        preview.Width(332);
-        preview.Height(332);
-        preview.CornerRadius(CornerRadius{ 8, 8, 8, 8 });
-        preview.BorderThickness(Thickness{ 1, 1, 1, 1 });
-        preview.BorderBrush(Application::Current().Resources()
-                                .Lookup(box_value(L"CardStrokeColorDefaultBrush")).as<Brush>());
-        // 画面四周（letterbox 区域）一律黑色，与设备实际显示一致
-        preview.Background(SolidColorBrush{ Windows::UI::Colors::Black() });
-
-        // 与 Mica 背景区分开：加主题阴影并抬升 Z 轴
-        auto previewShadow = ThemeShadow{};
-        preview.Shadow(previewShadow);
-        preview.Translation(Windows::Foundation::Numerics::float3{ 0.0f, 0.0f, 16.0f });
-        TextBlock previewText;
-        previewText.Text(L"未在显示");
-        previewText.HorizontalAlignment(HorizontalAlignment::Center);
-        previewText.VerticalAlignment(VerticalAlignment::Center);
-        previewText.Foreground(Application::Current().Resources()
-                                   .Lookup(box_value(L"TextFillColorTertiaryBrush")).as<Brush>());
-
-        // 实时预览：播放时把收到的帧画在这里（与设备上显示的内容一致）。
-        m_previewSource = Media::Imaging::SoftwareBitmapSource{};
-        m_previewImage = Image{};
-        m_previewImage.Source(m_previewSource);
-        m_previewImage.Stretch(Stretch::Uniform);
-        m_previewImage.Width(320);
-        m_previewImage.Height(320);
-        m_previewPlaceholder = previewText;
-
-        Grid previewInner;
-        previewInner.Children().Append(m_previewImage);
-        previewInner.Children().Append(previewText);
-        // Border 设置 CornerRadius 后会裁剪子内容，画面圆角自然与外框一致。
-        preview.Child(previewInner);
-        Grid::SetColumn(preview, 0);
-        body.Children().Append(preview);
-
-        // 右侧：控制卡
-        StackPanel controls;
-        controls.Spacing(14);
-
-        ToggleSwitch screenSwitch;
-        screenSwitch.Header(box_value(L"屏幕开关"));
-        // 初值来自配置；先设状态再挂事件，避免初始化时触发一次多余的命令。
-        screenSwitch.IsOn(AppConfigStore().Data().screenOn);
-        screenSwitch.Toggled([this](IInspectable const& sender, RoutedEventArgs const&)
-        {
-            if (auto toggle = sender.try_as<ToggleSwitch>())
-            {
-                // 记住用户设定，下次启动按此恢复（与电源联动关屏互不覆盖）
-                AppConfigStore().Data().screenOn = toggle.IsOn();
-                AppConfigStore().Save();
-                Player().SetScreenPower(toggle.IsOn());
-            }
-        });
-        controls.Children().Append(screenSwitch);
-
-        StackPanel brightnessRow;
-        brightnessRow.Spacing(6);
-        TextBlock brightnessLabel;
-        brightnessLabel.Text(L"亮度");
-        brightnessRow.Children().Append(brightnessLabel);
-        Slider brightness;
-        brightness.Minimum(0);
-        brightness.Maximum(100);
-        brightness.Value(AppConfigStore().Data().brightness);
-        brightnessRow.Children().Append(brightness);
-        // 拖动时实时下发命令；松手（失焦）时才写配置，避免拖一次写上百次文件。
-        brightness.ValueChanged([this](IInspectable const&, Controls::Primitives::RangeBaseValueChangedEventArgs const& args)
-        {
-            Player().SetBrightness(static_cast<int>(args.NewValue()));
-        });
-        brightness.LostFocus([this, brightness](IInspectable const&, RoutedEventArgs const&)
-        {
-            AppConfigStore().Data().brightness = static_cast<int>(brightness.Value());
-            AppConfigStore().Save();
-        });
-        controls.Children().Append(brightnessRow);
-
-        ComboBox fitMode;
-        fitMode.Header(box_value(L"图像适应"));
-        fitMode.Items().Append(box_value(L"适应 · contain"));
-        fitMode.Items().Append(box_value(L"填充 · cover"));
-        fitMode.Items().Append(box_value(L"拉伸 · stretch"));
-        {
-            const std::wstring stored = AppConfigStore().Data().fitMode;
-            fitMode.SelectedIndex(stored == L"cover" ? 1 : (stored == L"stretch" ? 2 : 0));
-        }
-        fitMode.SelectionChanged([this, fitMode](IInspectable const&, SelectionChangedEventArgs const&)
-        {
-            auto params = Player().Params();
-            switch (fitMode.SelectedIndex())
-            {
-            case 1: params.fitMode = ::ScreenControl::Imaging::FitMode::Cover; break;
-            case 2: params.fitMode = ::ScreenControl::Imaging::FitMode::Stretch; break;
-            default: params.fitMode = ::ScreenControl::Imaging::FitMode::Contain; break;
-            }
-            Player().SetParams(params);
-            AppConfigStore().Data().fitMode =
-                fitMode.SelectedIndex() == 1 ? L"cover"
-                : (fitMode.SelectedIndex() == 2 ? L"stretch" : L"contain");
-            AppConfigStore().Save();
-        });
-        controls.Children().Append(fitMode);
-
-        ComboBox rotation;
-        rotation.Header(box_value(L"画面旋转"));
-        rotation.Items().Append(box_value(L"0°"));
-        rotation.Items().Append(box_value(L"90°"));
-        rotation.Items().Append(box_value(L"180°"));
-        rotation.Items().Append(box_value(L"270°"));
-        {
-            const int storedRotation = AppConfigStore().Data().rotation;
-            rotation.SelectedIndex(storedRotation == 90 ? 1 : (storedRotation == 180 ? 2 : (storedRotation == 270 ? 3 : 0)));
-        }
-        rotation.SelectionChanged([this, rotation](IInspectable const&, SelectionChangedEventArgs const&)
-        {
-            auto params = Player().Params();
-            switch (rotation.SelectedIndex())
-            {
-            case 1: params.rotation = ::ScreenControl::Imaging::Rotation::Deg90; break;
-            case 2: params.rotation = ::ScreenControl::Imaging::Rotation::Deg180; break;
-            case 3: params.rotation = ::ScreenControl::Imaging::Rotation::Deg270; break;
-            default: params.rotation = ::ScreenControl::Imaging::Rotation::Deg0; break;
-            }
-            Player().SetParams(params);
-            AppConfigStore().Data().rotation =
-                rotation.SelectedIndex() == 1 ? 90
-                : (rotation.SelectedIndex() == 2 ? 180 : (rotation.SelectedIndex() == 3 ? 270 : 0));
-            AppConfigStore().Save();
-        });
-        controls.Children().Append(rotation);
-
-        InfoBar info;
-        info.IsOpen(true);
-        info.IsClosable(false);
-        info.Severity(InfoBarSeverity::Informational);
-        info.Title(L"当前进度");
-        info.Message(L"HID 发送与照片/视频播放已接入；素材导入（ffmpeg 转码）与实时预览将在后续迭代补齐。");
-        controls.Children().Append(info);
-
-        auto controlsCard = MakeCard(controls);
-        Grid::SetColumn(controlsCard, 1);
-        body.Children().Append(controlsCard);
-
-        page.Children().Append(body);
-
-        // ---------------- 素材与播放 ----------------
-        StackPanel media;
-        media.Spacing(10);
-
-        m_deviceText = TextBlock{};
-        m_deviceText.Text(Player().DeviceReady() ? L"设备：已连接" : L"设备：未连接（若官方 InfoHub 正在运行，请先退出它——它会独占 HID 接口）");
-        media.Children().Append(m_deviceText);
-
-        m_statusText = TextBlock{};
-        m_statusText.Text(L"未在显示");
-        m_statusText.FontSize(12);
-        media.Children().Append(m_statusText);
-
-        Grid mediaRow;
-        mediaRow.ColumnSpacing(16);
-        mediaRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
-        mediaRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
-
-        StackPanel photoPanel;
-        photoPanel.Spacing(6);
-        TextBlock photoLabel;
-        photoLabel.Text(L"照片");
-        photoPanel.Children().Append(photoLabel);
-        ListView photoList;
-        photoList.Height(180);
-        PopulateMediaList(photoList,
-                          (AppConfigStore().AssetRoot() / L"photos").wstring(),
-                          L".jpg,.jpeg,.png,.bmp");
-        photoPanel.Children().Append(photoList);
-        Button playPhoto;
-        playPhoto.Content(box_value(L"播放选中的照片"));
-        playPhoto.Click([this, photoList](auto const&, RoutedEventArgs const&)
-        {
-            // SelectedItem() 返回的是 ListViewItem 本身，不是 hstring。
-            // 之前直接 unbox_value<hstring>(item) 类型不匹配抛异常 -> 崩溃。
-            // 路径存在 Tag 里，所以先转成 ListViewItem 再取 Tag。
-            if (auto item = photoList.SelectedItem().try_as<ListViewItem>())
-            {
-                const std::wstring path = unbox_value<hstring>(item.Tag()).c_str();
-                Player().Play(std::filesystem::path(path));
-            }
-        });
-        photoPanel.Children().Append(playPhoto);
-        Grid::SetColumn(photoPanel, 0);
-        mediaRow.Children().Append(photoPanel);
-
-        StackPanel videoPanel;
-        videoPanel.Spacing(6);
-        TextBlock videoLabel;
-        videoLabel.Text(L"视频");
-        videoPanel.Children().Append(videoLabel);
-        ListView videoList;
-        videoList.Height(180);
-        PopulateMediaList(videoList,
-                          (AppConfigStore().AssetRoot() / L"videos").wstring(),
-                          L".mp4,.avi,.mov,.mkv,.webm,.m4v");
-        videoPanel.Children().Append(videoList);
-        Button playVideo;
-        playVideo.Content(box_value(L"播放选中的视频"));
-        playVideo.Click([this, videoList](auto const&, RoutedEventArgs const&)
-        {
-            if (auto item = videoList.SelectedItem().try_as<ListViewItem>())
-            {
-                const std::wstring path = unbox_value<hstring>(item.Tag()).c_str();
-                Player().Play(std::filesystem::path(path));
-            }
-        });
-        videoPanel.Children().Append(playVideo);
-        Grid::SetColumn(videoPanel, 1);
-        mediaRow.Children().Append(videoPanel);
-
-        media.Children().Append(mediaRow);
-
-        Button stopButton;
-        stopButton.Content(box_value(L"停止显示"));
-        stopButton.Click([this](auto const&, RoutedEventArgs const&) { Player().Stop(); });
-        media.Children().Append(stopButton);
-
-        page.Children().Append(MakeCard(media));
-
-        return MakeScrollable(page);
-    }
 
     void MainWindow::PopulateMediaList(ListView const& list, std::wstring const& directory,
                                        std::wstring const& extensionsCsv)
@@ -1169,248 +781,38 @@ namespace winrt::ScreenControl::implementation
         }
     }
 
-    UIElement MainWindow::BuildSettingsPage()
+    MainWindow* MainWindow::Current() noexcept
     {
-        StackPanel page;
-        page.Spacing(4);
-        page.Margin(Thickness{ 24, 8, 24, 24 });
+        return s_current;
+    }
 
-        page.Children().Append(MakeTitle(L"设置"));
+    ::ScreenControl::AppTheme MainWindow::CurrentTheme() const noexcept
+    {
+        return m_theme;
+    }
 
-        // 开机自启动：左侧文本、右侧开关（与系统设置页的条目一致，开关不显示文字）
-        ToggleSwitch autoStart;
-        autoStart.MinWidth(0);
-        autoStart.OnContent(nullptr);
-        autoStart.OffContent(nullptr);
-        autoStart.VerticalAlignment(VerticalAlignment::Center);
-        autoStart.HorizontalAlignment(HorizontalAlignment::Right);
+    void MainWindow::AttachStatusText(TextBlock const& text)
+    {
+        m_statusText = text;
+    }
 
-        Grid autoStartRow;
-        autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-        autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
-        autoStartRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+    void MainWindow::AttachDeviceText(TextBlock const& text)
+    {
+        m_deviceText = text;
+    }
 
-        FontIcon autoStartIcon;
-        autoStartIcon.Glyph(L"\xE7E8");
-        autoStartIcon.FontSize(16);
-        autoStartIcon.VerticalAlignment(VerticalAlignment::Center);
-        Grid::SetColumn(autoStartIcon, 0);
-        autoStartRow.Children().Append(autoStartIcon);
+    void MainWindow::AttachPreview(Media::Imaging::SoftwareBitmapSource const& source,
+                                   TextBlock const& placeholder)
+    {
+        m_previewSource = source;
+        m_previewPlaceholder = placeholder;
+    }
 
-        TextBlock autoStartLabel;
-        autoStartLabel.Text(L"开机自启动");
-        autoStartLabel.VerticalAlignment(VerticalAlignment::Center);
-        autoStartLabel.Margin(Thickness{ 16, 0, 0, 0 });
-        Grid::SetColumn(autoStartLabel, 1);
-        autoStartRow.Children().Append(autoStartLabel);
-
-        Grid::SetColumn(autoStart, 2);
-        autoStartRow.Children().Append(autoStart);
-        // 关闭窗口时的行为（下拉选择，与开机自启动同一张卡）
-        Grid closeRow;
-        closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-        closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
-        closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
-
-        FontIcon closeIcon;
-        closeIcon.Glyph(L"\xE8BB");
-        closeIcon.FontSize(16);
-        closeIcon.VerticalAlignment(VerticalAlignment::Center);
-        Grid::SetColumn(closeIcon, 0);
-        closeRow.Children().Append(closeIcon);
-
-        TextBlock closeLabel;
-        closeLabel.Text(L"关闭窗口时");
-        closeLabel.VerticalAlignment(VerticalAlignment::Center);
-        closeLabel.Margin(Thickness{ 16, 0, 0, 0 });
-        Grid::SetColumn(closeLabel, 1);
-        closeRow.Children().Append(closeLabel);
-
-        ComboBox closeChoice;
-        closeChoice.MinWidth(180);
-        closeChoice.VerticalAlignment(VerticalAlignment::Center);
-        closeChoice.Items().Append(box_value(L"隐藏到系统托盘"));
-        closeChoice.Items().Append(box_value(L"退出程序"));
-
-
-        auto const& closeConfig = AppConfigStore().Data();
-        closeChoice.SelectedIndex(closeConfig.closeAction == L"exit" ? 1 : 0);
-
-        closeChoice.SelectionChanged([this, closeChoice](IInspectable const&, SelectionChangedEventArgs const&)
-        {
-            const std::wstring value = closeChoice.SelectedIndex() == 1 ? L"exit" : L"tray";
-            auto& config = AppConfigStore().Data();
-            config.closeAction = value;
-            AppConfigStore().Save();
-        });
-
-        Grid::SetColumn(closeChoice, 2);
-        closeRow.Children().Append(closeChoice);
-
-        // 主题：参考系统设置页的做法 —— 可展开条目，标题行左侧图标 + 名称、
-        // 右侧显示当前选项；展开后三选一。顺序按参考图：浅色 / 深色 / 使用系统设置。
-        auto themeLabelOf = [](::ScreenControl::AppTheme value) -> wchar_t const*
-        {
-            switch (value)
-            {
-            case ::ScreenControl::AppTheme::Light: return L"浅色";
-            case ::ScreenControl::AppTheme::Dark: return L"深色";
-            default: return L"使用系统设置";
-            }
-        };
-
-        TextBlock themeValue;
-        themeValue.FontSize(12);
-        themeValue.VerticalAlignment(VerticalAlignment::Center);
-        themeValue.Text(themeLabelOf(m_theme));
-
-        RadioButtons themeChoice;
-        themeChoice.Items().Append(box_value(L"浅色"));
-        themeChoice.Items().Append(box_value(L"深色"));
-        themeChoice.Items().Append(box_value(L"使用系统设置"));
-
-        // 先回显再挂事件，避免初始化时触发一次多余的应用。
-        themeChoice.SelectedIndex(
-            m_theme == ::ScreenControl::AppTheme::Light ? 0
-            : (m_theme == ::ScreenControl::AppTheme::Dark ? 1 : 2));
-
-        themeChoice.SelectionChanged([this, themeValue, themeLabelOf](IInspectable const& sender, SelectionChangedEventArgs const&)
-        {
-            auto radio = sender.try_as<RadioButtons>();
-            if (!radio)
-            {
-                return;
-            }
-            ::ScreenControl::AppTheme theme = ::ScreenControl::AppTheme::System;
-            switch (radio.SelectedIndex())
-            {
-            case 0: theme = ::ScreenControl::AppTheme::Light; break;
-            case 1: theme = ::ScreenControl::AppTheme::Dark; break;
-            default: theme = ::ScreenControl::AppTheme::System; break;
-            }
-            ApplyTheme(theme, true);
-            themeValue.Text(themeLabelOf(theme));
-        });
-
-
-        // 「常规」与「个性化」拆成两张卡：开机自启属于启动行为，主题属于外观，不应混在一起。
-        page.Children().Append(MakeSectionTitle(L"应用行为"));
-        page.Children().Append(MakeBehaviorCard(autoStartRow));
-        page.Children().Append(MakeBehaviorCard(closeRow));
-        page.Children().Append(MakeSectionTitle(L"个性化"));
-
-        // Expander 自身就是一张卡片，不再额外套一层 MakeCard，
-        // 否则会出现双层边框与多余内边距（也就是"多包了一层"）。
-        page.Children().Append(MakeSettingsCard(L"\xE706", L"应用主题", themeValue, themeChoice));
-
-        // ---------------- 主题色 ----------------
-        auto& config = AppConfigStore().Data();
-
-        auto colorLabelOf = [](std::wstring const& value) -> wchar_t const*
-        {
-            return value == L"tuf" ? L"TUF GAMING" : L"使用系统设置";
-        };
-
-        TextBlock colorValue;
-        colorValue.FontSize(12);
-        colorValue.VerticalAlignment(VerticalAlignment::Center);
-        colorValue.Text(colorLabelOf(config.themeColor));
-
-
-        RadioButtons colorChoice;
-        colorChoice.Items().Append(box_value(L"TUF GAMING"));
-        colorChoice.Items().Append(box_value(L"使用系统设置"));
-        colorChoice.SelectedIndex(config.themeColor == L"tuf" ? 0 : 1);
-        colorChoice.SelectionChanged([this, colorValue, colorLabelOf](IInspectable const& sender, SelectionChangedEventArgs const&)
-        {
-            auto radio = sender.try_as<RadioButtons>();
-            if (!radio)
-            {
-                return;
-            }
-            const std::wstring value = radio.SelectedIndex() == 0 ? L"tuf" : L"system";
-            AppConfigStore().Data().themeColor = value;
-            AppConfigStore().Save();
-            colorValue.Text(colorLabelOf(value));
-        });
-
-        page.Children().Append(MakeSettingsCard(L"\xE790", L"主题色", colorValue, colorChoice));
-
-        // ---------------- 智能关屏（顶栏总开关 + 子项） ----------------
-
-        // 子项容器：总开关关闭时整体置灰
-        StackPanel powerItemsInner;
-        powerItemsInner.Spacing(4);
-
-
-        // 只有 Control 才有 IsEnabled，StackPanel 没有，所以包一层 ContentControl。
-        ContentControl powerItems;
-        powerItems.Content(powerItemsInner);
-        powerItems.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-
-        auto makePowerItem = [&powerItemsInner](wchar_t const* title, bool initial,
-                                                std::function<void(bool)> persist)
-        {
-            CheckBox box;
-            box.IsChecked(initial);
-            box.Checked([persist](IInspectable const& sender, RoutedEventArgs const&)
-            {
-                if (auto control = sender.try_as<CheckBox>())
-                {
-                    if (auto state = control.IsChecked()) { persist(state.GetBoolean()); }
-                }
-            });
-            box.Unchecked([persist](IInspectable const& sender, RoutedEventArgs const&)
-            {
-                if (auto control = sender.try_as<CheckBox>())
-                {
-                    if (auto state = control.IsChecked()) { persist(state.GetBoolean()); }
-                }
-            });
-
-            // 子项只要一个名称，不再配说明小字。
-            TextBlock titleBlock;
-            titleBlock.Text(title);
-            titleBlock.TextWrapping(TextWrapping::Wrap);
-            box.Content(titleBlock);
-            powerItemsInner.Children().Append(box);
-        };
-
-        makePowerItem(L"关闭程序时", config.powerCloseApp,
-                      [this](bool value) { AppConfigStore().Data().powerCloseApp = value; AppConfigStore().Save(); });
-        makePowerItem(L"关闭电脑时", config.powerShutdown,
-                      [this](bool value) { AppConfigStore().Data().powerShutdown = value; AppConfigStore().Save(); });
-        makePowerItem(L"睡眠时", config.powerSleep,
-                      [this](bool value) { AppConfigStore().Data().powerSleep = value; AppConfigStore().Save(); });
-        makePowerItem(L"注销时", config.powerLogout,
-                      [this](bool value) { AppConfigStore().Data().powerLogout = value; AppConfigStore().Save(); });
-
-        ToggleSwitch powerMaster;
-        powerMaster.IsOn(config.powerActions);
-        powerMaster.MinWidth(0);
-        powerMaster.OnContent(nullptr);
-        powerMaster.OffContent(nullptr);
-        powerMaster.VerticalAlignment(VerticalAlignment::Center);
-        powerMaster.HorizontalAlignment(HorizontalAlignment::Right);
-        Grid::SetColumn(powerMaster, 2);
-
-        // 总开关关闭时子项灰显（与系统设置页一致）
-        powerItems.IsEnabled(config.powerActions);
-        powerMaster.Toggled([this, powerItems](IInspectable const& sender, RoutedEventArgs const&)
-        {
-            if (auto control = sender.try_as<ToggleSwitch>())
-            {
-                AppConfigStore().Data().powerActions = control.IsOn();
-                AppConfigStore().Save();
-                powerItems.IsEnabled(control.IsOn());
-            }
-        });
-
-        // 注意：powerHeader 与 powerItems 只能各有一个父节点。
-        // 之前先把它们塞进 powerSection，随后又设为 Expander 的 Header/Content，
-        // 同一个 UIElement 被挂到两处 -> XAML 抛 E_INVALIDARG（"参数错误"）导致闪退。
-        page.Children().Append(MakeSettingsCard(L"\xE7E8", L"智能关屏", powerMaster, powerItems));
-
-        return MakeScrollable(page);
+    void MainWindow::DetachPageUi()
+    {
+        m_statusText = nullptr;
+        m_deviceText = nullptr;
+        m_previewSource = nullptr;
+        m_previewPlaceholder = nullptr;
     }
 }

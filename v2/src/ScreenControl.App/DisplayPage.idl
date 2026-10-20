@@ -1,0 +1,8 @@
+namespace ScreenControl
+{
+    [default_interface]
+    runtimeclass DisplayPage : Microsoft.UI.Xaml.Controls.Page
+    {
+        DisplayPage();
+    }
+}

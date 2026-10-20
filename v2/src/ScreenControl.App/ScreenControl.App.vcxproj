@@ -126,6 +126,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Midl Include="DisplayPage.idl" />
+    <Midl Include="SettingsPage.idl" />
     <Midl Include="MainWindow.idl">
       <SubType>Code</SubType>
       <DependentUpon>MainWindow.xaml</DependentUpon>
@@ -141,6 +143,8 @@
   -->
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml" />
+    <Page Include="DisplayPage.xaml" />
+    <Page Include="SettingsPage.xaml" />
     <Page Include="MainWindow.xaml" />
   </ItemGroup>
 
@@ -152,6 +156,9 @@
     <ClInclude Include="PowerMonitor.h" />
     <ClInclude Include="TrayIcon.h" />
     <ClInclude Include="SingleInstance.h" />
+    <ClInclude Include="UiHelpers.h" />
+    <ClInclude Include="DisplayPage.xaml.h" />
+    <ClInclude Include="SettingsPage.xaml.h" />
   </ItemGroup>
 
   <ItemGroup>
@@ -164,6 +171,9 @@
     <ClCompile Include="PowerMonitor.cpp" />
     <ClCompile Include="TrayIcon.cpp" />
     <ClCompile Include="SingleInstance.cpp" />
+    <ClCompile Include="UiHelpers.cpp" />
+    <ClCompile Include="DisplayPage.xaml.cpp" />
+    <ClCompile Include="SettingsPage.xaml.cpp" />
     <ClCompile Include="XamlGeneratedIncludes.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
   </ItemGroup>

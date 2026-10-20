@@ -83,6 +83,14 @@ namespace ScreenControl
 
         if (self != nullptr)
         {
+            // 额外注册消息（例如单实例激活）：消费掉并回调
+            if (self->m_handlers.activateMessage != 0 &&
+                message == self->m_handlers.activateMessage)
+            {
+                Invoke(self->m_handlers.activate);
+                return 0;
+            }
+
             switch (message)
             {
             case WM_POWERBROADCAST:

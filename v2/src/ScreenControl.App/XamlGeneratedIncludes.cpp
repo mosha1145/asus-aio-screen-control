@@ -16,9 +16,19 @@
 // ============================================================================
 
 #include "pch.h"
+#include "DisplayPage.xaml.h"
+#include "SettingsPage.xaml.h"
 
 #if __has_include("App.xaml.g.hpp")
 #include "App.xaml.g.hpp"
+#endif
+
+#if __has_include("DisplayPage.xaml.g.hpp")
+#include "DisplayPage.xaml.g.hpp"
+#endif
+
+#if __has_include("SettingsPage.xaml.g.hpp")
+#include "SettingsPage.xaml.g.hpp"
 #endif
 
 #if __has_include("MainWindow.xaml.g.hpp")

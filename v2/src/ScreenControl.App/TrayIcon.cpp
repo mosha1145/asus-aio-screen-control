@@ -115,7 +115,7 @@ namespace ScreenControl
             DiagLog(L"tray: CreateWindowEx failed", ::GetLastError());
             return false;
         }
-        DiagLog(L"tray: window created", classError);
+        DiagLog(L"tray: window created");
 
         m_icon = LoadApplicationIcon();
         DiagLog(m_icon != nullptr ? L"tray: icon loaded" : L"tray: icon NULL");
