@@ -1,6 +1,7 @@
 #pragma once
 
 #include "App.xaml.g.h"
+#include "SingleInstance.h"
 
 namespace winrt::ScreenControl::implementation
 {
@@ -14,5 +15,8 @@ namespace winrt::ScreenControl::implementation
 
     private:
         winrt::Microsoft::UI::Xaml::Window window{ nullptr };
+
+        // 单实例守卫：第二个实例启动时通知已有实例把窗口叫出来，然后自己退出。
+        ::ScreenControl::SingleInstance m_singleInstance;
     };
 }

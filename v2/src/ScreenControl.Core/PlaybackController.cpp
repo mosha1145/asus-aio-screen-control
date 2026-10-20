@@ -269,6 +269,18 @@ namespace ScreenControl::Core
                 }
             }
 
+            // 记住最后一帧：暂停时用它维持画面（低频重发）
+            m_lastJpeg = jpeg;
+
+            if (m_paused.load())
+            {
+                if (m_device.IsOpen() && !m_lastJpeg.empty())
+                {
+                    m_device.SendFrame(m_lastJpeg, 0);
+                }
+                SleepUntil(tickStart + std::chrono::milliseconds(400));
+                continue;
+            }
             // 预览：已适配、未旋转
             PreviewCallback preview;
             {

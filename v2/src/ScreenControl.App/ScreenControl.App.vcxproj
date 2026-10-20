@@ -150,6 +150,8 @@
     <ClInclude Include="MainWindow.h" />
     <ClInclude Include="NativeTheme.h" />
     <ClInclude Include="PowerMonitor.h" />
+    <ClInclude Include="TrayIcon.h" />
+    <ClInclude Include="SingleInstance.h" />
   </ItemGroup>
 
   <ItemGroup>
@@ -160,6 +162,8 @@
     <ClCompile Include="MainWindow.cpp" />
     <ClCompile Include="NativeTheme.cpp" />
     <ClCompile Include="PowerMonitor.cpp" />
+    <ClCompile Include="TrayIcon.cpp" />
+    <ClCompile Include="SingleInstance.cpp" />
     <ClCompile Include="XamlGeneratedIncludes.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
   </ItemGroup>

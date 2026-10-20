@@ -15,6 +15,7 @@
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
 #include <winrt/Windows.Graphics.Imaging.h>
+#include <winrt/Windows.Graphics.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #include <functional>
 #include <memory>
@@ -193,6 +194,8 @@ namespace winrt::ScreenControl::implementation
         // 电源 / 会话事件（睡眠、关机、注销）与窗口关闭处理。
         SetupPowerEvents();
 
+        // 托盘图标 + 关闭行为（隐藏到托盘 / 退出 / 询问）
+        SetupTrayAndCloseBehavior();
     }
 
     void MainWindow::ApplyPersistedDeviceState()
@@ -274,6 +277,234 @@ namespace winrt::ScreenControl::implementation
     }
 
 
+    void MainWindow::SetupTrayAndCloseBehavior()
+    {
+        // 拦截窗口关闭：按配置「隐藏到托盘 / 退出 / 询问」处理。
+        if (auto appWindow = AppWindow())
+        {
+            appWindow.Closing([this](Microsoft::UI::Windowing::AppWindow const&,
+                                     Microsoft::UI::Windowing::AppWindowClosingEventArgs const& args)
+            {
+                if (m_exiting)
+                {
+                    return;   // 真退出：放行，交给 Closed 处理
+                }
+
+                auto& config = AppConfigStore().Data();
+                std::wstring action = config.closeAction;
+                if (!config.closePromptShown)
+                {
+                    action = L"ask";   // 首次关闭一律询问
+                }
+
+                if (action == L"tray")
+                {
+                    args.Cancel(true);
+                    HideToTray();
+                }
+                else if (action == L"exit")
+                {
+                    m_exiting = true;
+                }
+                else
+                {
+                    args.Cancel(true);
+                    ShowClosePrompt();
+                }
+            });
+        }
+
+        m_trayIcon.Add(L"ASUS AIO Screen Control",
+                       [this]() { ShowFromTray(); },
+                       [this]() { ShowTrayMenu(); });
+    }
+
+    void MainWindow::HideToTray()
+    {
+        if (auto appWindow = AppWindow())
+        {
+            appWindow.Hide();
+        }
+    }
+
+    void MainWindow::ShowFromTray()
+    {
+        if (auto appWindow = AppWindow())
+        {
+            appWindow.Show();
+        }
+        Activate();
+        if (HWND hwnd = GetHwnd())
+        {
+            ::SetForegroundWindow(hwnd);
+        }
+    }
+
+    void MainWindow::ShowClosePrompt()
+    {
+        if (m_closePromptOpen)
+        {
+            return;
+        }
+
+        auto root = Content().try_as<FrameworkElement>();
+        if (!root || !root.XamlRoot())
+        {
+            HideToTray();
+            return;
+        }
+
+        m_closePromptOpen = true;
+
+        ContentDialog dialog;
+        dialog.XamlRoot(root.XamlRoot());
+        dialog.Title(box_value(L"关闭窗口时"));
+        dialog.Content(box_value(L"关闭主窗口后，程序可以继续在系统托盘运行，水冷屏显示不会中断。"));
+        dialog.PrimaryButtonText(L"隐藏到系统托盘");
+        dialog.SecondaryButtonText(L"退出程序");
+        dialog.CloseButtonText(L"每次关闭前询问");
+        dialog.DefaultButton(ContentDialogButton::Primary);
+
+        auto operation = dialog.ShowAsync();
+        operation.Completed([this, dialog](auto const& op, Windows::Foundation::AsyncStatus status)
+        {
+            m_closePromptOpen = false;
+
+            ContentDialogResult result = ContentDialogResult::None;
+            if (status == Windows::Foundation::AsyncStatus::Completed)
+            {
+                result = op.GetResults();
+            }
+
+            auto& config = AppConfigStore().Data();
+            config.closePromptShown = true;
+
+
+            if (result == ContentDialogResult::Primary)
+            {
+                config.closeAction = L"tray";
+                AppConfigStore().Save();
+                HideToTray();
+            }
+            else if (result == ContentDialogResult::Secondary)
+            {
+                config.closeAction = L"exit";
+                AppConfigStore().Save();
+                ExitApplication();
+            }
+            else
+            {
+                config.closeAction = L"ask";
+                AppConfigStore().Save();
+            }
+        });
+    }
+
+    void MainWindow::ExitApplication()
+    {
+        m_exiting = true;
+        m_trayIcon.Remove();
+
+        if (m_player)
+        {
+            auto const& config = AppConfigStore().Data();
+            if (config.powerActions && config.powerCloseApp)
+            {
+                m_player->SetScreenPower(false);
+            }
+            m_player->RequestStop();    // 不 join，避免卡住
+        }
+
+        m_powerMonitor.Stop();
+        ExitProcess(0);
+    }
+
+    void MainWindow::ShowTrayMenu()
+    {
+        // 用一个隐藏的 WinUI 窗口承载原生 MenuFlyout：
+        // 菜单外观、圆角、亚克力、动画全部来自 WinUI，不做任何自绘。
+        if (!m_menuHost)
+        {
+            m_menuHost = Window{};
+            m_menuHost.Title(L"");
+            if (auto hostWindow = m_menuHost.AppWindow())
+            {
+                hostWindow.IsShownInSwitchers(false);
+                if (auto presenter =
+                        hostWindow.Presenter().try_as<Microsoft::UI::Windowing::OverlappedPresenter>())
+                {
+                    presenter.SetBorderAndTitleBar(false, false);
+                    presenter.IsResizable(false);
+                    presenter.IsMaximizable(false);
+                    presenter.IsMinimizable(false);
+                }
+            }
+
+            m_menuAnchor = Border{};
+            m_menuAnchor.Width(1);
+            m_menuAnchor.Height(1);
+            m_menuHost.Content(m_menuAnchor);
+        }
+
+        const POINT cursor = ::ScreenControl::TrayIcon::CursorPosition();
+        if (auto hostWindow = m_menuHost.AppWindow())
+        {
+            hostWindow.Move(Windows::Graphics::PointInt32{ cursor.x, cursor.y });
+            hostWindow.Resize(Windows::Graphics::SizeInt32{ 1, 1 });
+        }
+        m_menuHost.Activate();
+
+        MenuFlyout flyout;
+
+        MenuFlyoutItem openItem;
+        openItem.Text(L"打开");
+        openItem.Click([this](IInspectable const&, RoutedEventArgs const&) { ShowFromTray(); });
+        flyout.Items().Append(openItem);
+
+        flyout.Items().Append(MenuFlyoutSeparator{});
+
+        MenuFlyoutItem toggleItem;
+        const bool paused = m_player && m_player->IsPaused();
+        toggleItem.Text(paused ? L"播放：继续" : L"播放：暂停");
+        toggleItem.Click([this](IInspectable const&, RoutedEventArgs const&)
+        {
+            if (m_player)
+            {
+                m_player->SetPaused(!m_player->IsPaused());
+            }
+        });
+        flyout.Items().Append(toggleItem);
+
+        MenuFlyoutItem stopItem;
+        stopItem.Text(L"停止显示");
+        stopItem.Click([this](IInspectable const&, RoutedEventArgs const&)
+        {
+            if (m_player)
+            {
+                m_player->Stop();
+            }
+        });
+        flyout.Items().Append(stopItem);
+
+        flyout.Items().Append(MenuFlyoutSeparator{});
+
+        MenuFlyoutItem exitItem;
+        exitItem.Text(L"退出");
+        exitItem.Click([this](IInspectable const&, RoutedEventArgs const&) { ExitApplication(); });
+        flyout.Items().Append(exitItem);
+
+        flyout.Closed([this](IInspectable const&, IInspectable const&)
+        {
+            if (m_menuHost)
+            {
+                m_menuHost.AppWindow().Hide();
+            }
+        });
+
+        Microsoft::UI::Xaml::Controls::Primitives::FlyoutShowOptions options;
+        options.Position(Windows::Foundation::Point{ 0.0f, 0.0f });
+        flyout.ShowAt(m_menuAnchor, options);
+    }
     void MainWindow::SetupPowerEvents()
     {
         HWND hwnd = GetHwnd();
@@ -329,6 +560,10 @@ namespace winrt::ScreenControl::implementation
                 turnOffScreen();
             }
         };
+
+        // 第二个实例启动时会广播这条消息，这里把窗口叫回来
+        handlers.activateMessage = ::ScreenControl::SingleInstance::ActivateMessageId();
+        handlers.activate = [this]() { ShowFromTray(); };
 
         m_powerMonitor.Start(hwnd, handlers);
 
@@ -901,6 +1136,50 @@ namespace winrt::ScreenControl::implementation
         autoStartRow.Children().Append(autoStart);
 
         general.Children().Append(autoStartRow);
+        // 关闭窗口时的行为（下拉选择，与开机自启动同一张卡）
+        Grid closeRow;
+        closeRow.MinHeight(64);
+        closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+        closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star)); return c; }());
+        closeRow.ColumnDefinitions().Append([] { ColumnDefinition c; c.Width(GridLengthHelper::Auto()); return c; }());
+
+        FontIcon closeIcon;
+        closeIcon.Glyph(L"\xE8BB");
+        closeIcon.FontSize(16);
+        closeIcon.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(closeIcon, 0);
+        closeRow.Children().Append(closeIcon);
+
+        TextBlock closeLabel;
+        closeLabel.Text(L"关闭窗口时");
+        closeLabel.VerticalAlignment(VerticalAlignment::Center);
+        closeLabel.Margin(Thickness{ 16, 0, 0, 0 });
+        Grid::SetColumn(closeLabel, 1);
+        closeRow.Children().Append(closeLabel);
+
+        ComboBox closeChoice;
+        closeChoice.MinWidth(180);
+        closeChoice.VerticalAlignment(VerticalAlignment::Center);
+        closeChoice.Items().Append(box_value(L"隐藏到系统托盘"));
+        closeChoice.Items().Append(box_value(L"退出程序"));
+        closeChoice.Items().Append(box_value(L"每次关闭前询问"));
+
+        auto const& closeConfig = AppConfigStore().Data();
+        closeChoice.SelectedIndex(closeConfig.closeAction == L"tray" ? 0
+                                  : (closeConfig.closeAction == L"exit" ? 1 : 2));
+
+        closeChoice.SelectionChanged([this, closeChoice](IInspectable const&, SelectionChangedEventArgs const&)
+        {
+            const std::wstring value = closeChoice.SelectedIndex() == 0 ? L"tray"
+                                     : (closeChoice.SelectedIndex() == 1 ? L"exit" : L"ask");
+            auto& config = AppConfigStore().Data();
+            config.closeAction = value;
+            AppConfigStore().Save();
+        });
+
+        Grid::SetColumn(closeChoice, 2);
+        closeRow.Children().Append(closeChoice);
+        general.Children().Append(closeRow);
 
         // 主题：参考系统设置页的做法 —— 可展开条目，标题行左侧图标 + 名称、
         // 右侧显示当前选项；展开后三选一。顺序按参考图：浅色 / 深色 / 使用系统设置。

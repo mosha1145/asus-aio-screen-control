@@ -49,6 +49,12 @@ namespace ScreenControl::Core
         // ---- 启动 ----
         bool autoStart = false;
 
+        /// 关闭主窗口时的行为：tray = 隐藏到系统托盘 / exit = 退出程序 / ask = 每次询问
+        std::wstring closeAction = L"ask";
+
+        /// 是否已经问过用户（首次关闭时弹一次）
+        bool closePromptShown = false;
+
         // ---- 界面（v2 新增） ----
         std::wstring appTheme = L"system";   ///< system / light / dark
         std::wstring themeColor = L"system"; ///< system / tuf（TUF GAMING 橙色 #FF9E1B）

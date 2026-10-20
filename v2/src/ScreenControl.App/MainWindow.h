@@ -9,6 +9,8 @@
 #include "MainWindow.g.h"
 #include "NativeTheme.h"
 #include "PowerMonitor.h"
+#include "TrayIcon.h"
+#include "SingleInstance.h"
 
 #include <memory>
 
@@ -49,6 +51,14 @@ namespace winrt::ScreenControl::implementation
         void ApplyPersistedDeviceState();
 
 
+        // ---------------- 托盘 / 关闭行为 ----------------
+        void SetupTrayAndCloseBehavior();
+        void HideToTray();
+        void ShowFromTray();
+        void ShowTrayMenu();
+        void ShowClosePrompt();
+        void ExitApplication();
+
         /// 构建一张可折叠的设置卡片（自绘，替代 Expander 以便精确控制对齐与高度）。
         /// glyph: 左侧图标；title: 标题；trailing: 标题行右侧元素（可为 nullptr）；
         /// body: 展开后显示的内容。
@@ -78,6 +88,14 @@ namespace winrt::ScreenControl::implementation
         winrt::Microsoft::UI::Xaml::Controls::TextBlock m_previewPlaceholder{ nullptr };
         std::wstring m_currentTag{ L"display" };
         ::ScreenControl::PowerMonitor m_powerMonitor;
+        ::ScreenControl::TrayIcon m_trayIcon;
+
+        // 承载 WinUI 菜单的隐藏宿主窗口（托盘右键菜单在光标处弹出）
+        winrt::Microsoft::UI::Xaml::Window m_menuHost{ nullptr };
+        winrt::Microsoft::UI::Xaml::Controls::Border m_menuAnchor{ nullptr };
+
+        bool m_exiting = false;
+        bool m_closePromptOpen = false;
     };
 }
 

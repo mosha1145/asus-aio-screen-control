@@ -34,6 +34,10 @@ namespace ScreenControl
             Handler resume;    ///< 从睡眠唤醒
             Handler shutdown;  ///< 关机
             Handler logoff;    ///< 注销
+
+            /// 额外监听的注册消息（例如单实例激活），0 表示不监听
+            UINT activateMessage = 0;
+            Handler activate;
         };
 
         PowerMonitor() = default;

@@ -70,6 +70,10 @@ namespace ScreenControl::Core
 
         bool IsPlaying() const noexcept { return m_playing.load(); }
 
+        /// 暂停/继续。暂停期间仍会以低频重发最后一帧，避免设备回落到自带动画。
+        void SetPaused(bool paused) noexcept { m_paused.store(paused); }
+        bool IsPaused() const noexcept { return m_paused.load(); }
+
         // ---------------- 参数 ----------------
         void SetParams(Imaging::RenderParams const& params);
         Imaging::RenderParams Params() const;
@@ -97,6 +101,8 @@ namespace ScreenControl::Core
 
         // 照片静止帧的编码缓存（照片每帧复用，避免重复编码）
         std::vector<std::uint8_t> m_photoJpeg;
+        std::vector<std::uint8_t> m_lastJpeg;
+        std::atomic<bool> m_paused{ false };
         std::atomic<bool> m_photoDirty{ true };
 
         std::thread m_worker;

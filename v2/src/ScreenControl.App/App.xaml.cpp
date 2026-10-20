@@ -108,6 +108,12 @@ namespace winrt::ScreenControl::implementation
 
     void App::OnLaunched([[maybe_unused]] LaunchActivatedEventArgs const& e)
     {
+        // 单实例：已有实例在运行时，通知它把窗口叫出来，然后本进程直接退出。
+        if (!m_singleInstance.Acquire(L"AsusAioScreenControl"))
+        {
+            ::ExitProcess(0);
+        }
+
         // 强调色必须在创建任何控件之前注入，否则已经实例化的控件不会跟随。
         // 因此主题色的改动是「重启后生效」。
         try

@@ -325,6 +325,8 @@ namespace ScreenControl::Core
         m_config.videoQuality = root[L"video_quality"].AsString(m_config.videoQuality);
 
         m_config.autoStart = root[L"auto_start"].AsBool(m_config.autoStart);
+        m_config.closeAction = ToLower(root[L"close_action"].AsString(m_config.closeAction));
+        m_config.closePromptShown = root[L"close_prompt_shown"].AsBool(m_config.closePromptShown);
         m_config.appTheme = ToLower(root[L"app_theme"].AsString(m_config.appTheme));
         m_config.themeColor = ToLower(root[L"theme_color"].AsString(m_config.themeColor));
 
@@ -378,7 +380,9 @@ namespace ScreenControl::Core
         out << "  \"auto_start\": " << (m_config.autoStart ? "true" : "false") << ",\n";
         out << "  \"app_theme\": \"" << JsonEscape(NarrowUtf8(m_config.appTheme)) << "\",\n";
     out << "  \"theme_color\": \"" << JsonEscape(NarrowUtf8(m_config.themeColor)) << "\",\n";
-        out << "  \"power_actions\": " << (m_config.powerActions ? "true" : "false") << ",\n";
+    out << "  \"close_action\": \"" << JsonEscape(NarrowUtf8(m_config.closeAction)) << "\",\n";
+    out << "  \"close_prompt_shown\": " << (m_config.closePromptShown ? "true" : "false") << ",\n";
+    out << "  \"power_actions\": " << (m_config.powerActions ? "true" : "false") << ",\n";
         out << "  \"power_close_app\": " << (m_config.powerCloseApp ? "true" : "false") << ",\n";
         out << "  \"power_shutdown\": " << (m_config.powerShutdown ? "true" : "false") << ",\n";
         out << "  \"power_logout\": " << (m_config.powerLogout ? "true" : "false") << ",\n";
