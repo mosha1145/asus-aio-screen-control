@@ -131,27 +131,15 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             }
             m_currentTag = tag;
 
-            // 首次导航（Frame 无内容）不播放转场：窗口正在出现，
-            // 叠加内容滑动会与窗口打开动画混淆、方向看起来不对。
-            // 之后的页面切换用官方 Slide(FromBottom)，即从下往上。
-            const bool firstNav = (m_contentFrame.Content() == nullptr);
-
-            Microsoft::UI::Xaml::Media::Animation::SlideNavigationTransitionInfo slide;
-            slide.Effect(Microsoft::UI::Xaml::Media::Animation::SlideNavigationTransitionEffect::FromBottom);
-
+            // 官方标准转场：EntranceNavigationTransitionInfo
+            //（Windows 设置页用的就是它，淡入 + 从底部上浮）。
+            // 不做首次/非首次区分——首次导航在 Activated 里由 DwmFlush 保证窗口已显示。
             auto const pageType = (tag == L"settings")
                 ? xaml_typename<ScreenControl::SettingsPage>()
                 : xaml_typename<ScreenControl::DisplayPage>();
 
-            if (firstNav)
-            {
-                m_contentFrame.Navigate(pageType, nullptr,
-                    Microsoft::UI::Xaml::Media::Animation::SuppressNavigationTransitionInfo{});
-            }
-            else
-            {
-                m_contentFrame.Navigate(pageType, nullptr, slide);
-            }
+            Microsoft::UI::Xaml::Media::Animation::EntranceNavigationTransitionInfo entrance;
+            m_contentFrame.Navigate(pageType, nullptr, entrance);
 
             // 关键：必须在 Navigate 之后清空。
             // Navigate 会把"上一个页面"压入 BackStack，先清再导航等于没清，
