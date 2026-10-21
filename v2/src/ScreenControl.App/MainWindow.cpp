@@ -128,14 +128,16 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             }
             m_currentTag = tag;
 
-            using Transition = Microsoft::UI::Xaml::Media::Animation::EntranceNavigationTransitionInfo;
+            // 显式指定"从下往上"的滑入动画（官方 SlideNavigationTransitionInfo）
+            Microsoft::UI::Xaml::Media::Animation::SlideNavigationTransitionInfo slide;
+            slide.Effect(Microsoft::UI::Xaml::Media::Animation::SlideNavigationTransitionEffect::FromBottom);
             if (tag == L"settings")
             {
-                m_contentFrame.Navigate(xaml_typename<ScreenControl::SettingsPage>(), nullptr, Transition{});
+                m_contentFrame.Navigate(xaml_typename<ScreenControl::SettingsPage>(), nullptr, slide);
             }
             else
             {
-                m_contentFrame.Navigate(xaml_typename<ScreenControl::DisplayPage>(), nullptr, Transition{});
+                m_contentFrame.Navigate(xaml_typename<ScreenControl::DisplayPage>(), nullptr, slide);
             }
 
             // 关键：必须在 Navigate 之后清空。
@@ -257,10 +259,11 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
                                          [this]() { ShowTrayMenu(); });
     }
 
-    void MainWindow::HideToTray()
+    void MainWindow::PrepareWindowForHide()
     {
-        // 闪白来源：窗口隐藏瞬间 Mica 停止绘制，而根容器是 Transparent，
-        // DWM 会露出默认白色底。先把根容器刷成主题底色再隐藏。
+        // 隐藏前先把界面换成"实色底 + 无 Mica"：
+        // Mica 背衬在窗口隐藏的瞬间不再被绘制，根容器若还是 Transparent，
+        // DWM 就会露出默认白色底，表现为"关闭时白闪"。
         if (auto root = Content().try_as<Panel>())
         {
             const auto background = ::ScreenControl::NativeTheme::ResolveIsDark(m_theme)
@@ -268,13 +271,39 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
                 : Windows::UI::ColorHelper::FromArgb(0xFF, 0xF3, 0xF3, 0xF3);
             root.Background(Media::SolidColorBrush{ background });
         }
-
-        if (auto appWindow = AppWindow())
-        {
-            appWindow.Hide();
-        }
+        SystemBackdrop(nullptr);
     }
 
+    void MainWindow::HideToTray()
+    {
+        PrepareWindowForHide();
+
+        // 关键：等一帧真正合成后再隐藏。
+        // DispatcherQueue.TryEnqueue 的回调仍可能早于合成，屏幕上是改底色之前的白帧；
+        // 这里用 80ms 定时器确保实色底已经上屏。
+        auto appWindow = AppWindow();
+        if (!appWindow)
+        {
+            return;
+        }
+
+        auto dispatcher = DispatcherQueue();
+        if (dispatcher)
+        {
+            auto timer = dispatcher.CreateTimer();
+            timer.Interval(std::chrono::milliseconds(80));
+            timer.IsRepeating(false);
+            timer.Tick([appWindow, timer](auto const&, auto const&) mutable
+            {
+                appWindow.Hide();
+                timer.Stop();
+            });
+            timer.Start();
+            return;
+        }
+
+        appWindow.Hide();
+    }
     void MainWindow::ShowFromTray()
     {
         if (auto appWindow = AppWindow())
@@ -287,6 +316,7 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
         {
             root.Background(nullptr);
         }
+        SystemBackdrop(MicaBackdrop{});
 
         Activate();
         if (HWND hwnd = GetHwnd())
@@ -369,6 +399,8 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
         m_exiting = true;
 
         // 先隐藏窗口：直接关闭会有一帧白底闪现
+        // 先准备实色底并隐藏窗口，避免关闭瞬间合成出白底
+        PrepareWindowForHide();
         if (auto appWindow = AppWindow())
         {
             appWindow.Hide();
@@ -386,7 +418,24 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
         }
 
         m_powerMonitor.Stop();
-        ExitProcess(0);
+
+        // 等实色底上屏后再结束进程，避免 DWM 合成出一帧白底
+        auto exitDispatcher = DispatcherQueue();
+        if (exitDispatcher)
+        {
+            auto exitTimer = exitDispatcher.CreateTimer();
+            exitTimer.Interval(std::chrono::milliseconds(80));
+            exitTimer.IsRepeating(false);
+            exitTimer.Tick([exitTimer](auto const&, auto const&) mutable
+            {
+                exitTimer.Stop();
+                ::ExitProcess(0);
+            });
+            exitTimer.Start();
+            return;
+        }
+
+        ::ExitProcess(0);
     }
 
     void MainWindow::ShowTrayMenu()

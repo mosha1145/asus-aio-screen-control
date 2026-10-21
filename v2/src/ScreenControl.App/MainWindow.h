@@ -66,6 +66,8 @@ namespace winrt::ScreenControl::implementation
 
         // ---------------- 托盘 / 关闭行为 ----------------
         void SetupTrayAndCloseBehavior();
+        /// 隐藏前把界面切成实色底并摘掉 Mica，避免关闭/隐藏瞬时白闪。
+        void PrepareWindowForHide();
         void HideToTray();
         void ShowFromTray();
         void ShowTrayMenu();
