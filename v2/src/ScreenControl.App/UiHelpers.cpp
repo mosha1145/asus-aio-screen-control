@@ -124,7 +124,16 @@ namespace ScreenControl::Ui
         expander.HorizontalAlignment(HorizontalAlignment::Stretch);
         expander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
         expander.Header(header);
-        expander.Content(body);
+        // 子选项缩进：与标题文字对齐（图标列 16 + 列间距 16，约 32），
+        // 而不是贴着卡片左侧与图标对齐。
+        Grid bodyHost;
+        bodyHost.Margin(Thickness{ 28, 0, 0, 0 });
+        if (auto bodyElement = body.try_as<FrameworkElement>())
+        {
+            bodyElement.HorizontalAlignment(HorizontalAlignment::Stretch);
+        }
+        bodyHost.Children().Append(body);
+        expander.Content(bodyHost);
         return expander;
     }
     ::ScreenControl::Core::ConfigStore& Config()
@@ -132,4 +141,48 @@ namespace ScreenControl::Ui
         return AppConfigStore();
     }
 
+}
+namespace ScreenControl::Ui
+{
+    namespace
+    {
+        struct PopupScanContext
+        {
+            DWORD pid;
+        };
+
+        BOOL CALLBACK StripResizeStyle(HWND hwnd, LPARAM lp)
+        {
+            auto* ctx = reinterpret_cast<PopupScanContext*>(lp);
+            DWORD pid = 0;
+            ::GetWindowThreadProcessId(hwnd, &pid);
+            if (pid != ctx->pid || ::IsWindowVisible(hwnd) == FALSE)
+            {
+                return TRUE;
+            }
+
+            wchar_t className[128]{};
+            ::GetClassNameW(hwnd, className, 128);
+            if (wcsstr(className, L"Popup") == nullptr)
+            {
+                return TRUE;   // 只处理弹出层窗口，绝不动主窗口
+            }
+
+            const LONG_PTR style = ::GetWindowLongPtrW(hwnd, GWL_STYLE);
+            if ((style & WS_THICKFRAME) != 0)
+            {
+                ::SetWindowLongPtrW(hwnd, GWL_STYLE, style & ~WS_THICKFRAME);
+            }
+            return TRUE;
+        }
+    }
+
+    void FixPopupResizeCursor(ComboBox const& combo)
+    {
+        combo.DropDownOpened([](winrt::Windows::Foundation::IInspectable const&, winrt::Windows::Foundation::IInspectable const&)
+        {
+            PopupScanContext ctx{ ::GetCurrentProcessId() };
+            ::EnumWindows(&StripResizeStyle, reinterpret_cast<LPARAM>(&ctx));
+        });
+    }
 }

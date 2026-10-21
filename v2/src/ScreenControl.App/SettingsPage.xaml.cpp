@@ -88,6 +88,8 @@ namespace winrt::ScreenControl::implementation
             ::ScreenControl::Ui::Config().Save();
         });
 
+        FixPopupResizeCursor(closeChoice);
+
         Grid::SetColumn(closeChoice, 2);
         closeRow.Children().Append(closeChoice);
 
