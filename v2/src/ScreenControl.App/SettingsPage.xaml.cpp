@@ -255,12 +255,6 @@ namespace winrt::ScreenControl::implementation
         // 之前先把它们塞进 powerSection，随后又设为 Expander 的 Header/Content，
         // 同一个 UIElement 被挂到两处 -> XAML 抛 E_INVALIDARG（"参数错误"）导致闪退。
         page.Children().Append(MakeSettingsCard(L"\xE7E8", L"智能关屏", powerMaster, powerItems));
-
-        // 页面入场动画：从底部上浮淡入（EntranceThemeTransition）。
-        Grid animationRoot;
-        animationRoot.ChildrenTransitions().Append(
-            Microsoft::UI::Xaml::Media::Animation::EntranceThemeTransition{});
-        animationRoot.Children().Append(MakeScrollable(page));
-        Content(animationRoot);
+        Content(MakeScrollable(page));
     }
 }

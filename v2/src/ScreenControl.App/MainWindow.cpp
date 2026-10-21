@@ -131,14 +131,13 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             }
             m_currentTag = tag;
 
-            // 转场交给页面自身的 EntranceThemeTransition（见 DisplayPage/SettingsPage
-            // 的 animationRoot），这里用 Suppress 避免 Frame 与页面叠加动画。
+            // 导航切换动画：官方 EntranceNavigationTransitionInfo（淡入 + 从底部上浮）
             auto const pageType = (tag == L"settings")
                 ? xaml_typename<ScreenControl::SettingsPage>()
                 : xaml_typename<ScreenControl::DisplayPage>();
 
-            Microsoft::UI::Xaml::Media::Animation::SuppressNavigationTransitionInfo suppress;
-            m_contentFrame.Navigate(pageType, nullptr, suppress);
+            Microsoft::UI::Xaml::Media::Animation::EntranceNavigationTransitionInfo entrance;
+            m_contentFrame.Navigate(pageType, nullptr, entrance);
 
             // 关键：必须在 Navigate 之后清空。
             // Navigate 会把"上一个页面"压入 BackStack，先清再导航等于没清，
