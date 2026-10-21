@@ -117,8 +117,6 @@ namespace winrt::ScreenControl::implementation
             const std::wstring stored = ::ScreenControl::Ui::Config().Data().fitMode;
             fitMode.SelectedIndex(stored == L"cover" ? 1 : (stored == L"stretch" ? 2 : 0));
         }
-        FixPopupResizeCursor(fitMode);
-
         fitMode.SelectionChanged([this, fitMode](IInspectable const&, SelectionChangedEventArgs const&)
         {
             auto params = MainWindow::Current()->Player().Params();
@@ -146,8 +144,6 @@ namespace winrt::ScreenControl::implementation
             const int storedRotation = ::ScreenControl::Ui::Config().Data().rotation;
             rotation.SelectedIndex(storedRotation == 90 ? 1 : (storedRotation == 180 ? 2 : (storedRotation == 270 ? 3 : 0)));
         }
-        FixPopupResizeCursor(rotation);
-
         rotation.SelectionChanged([this, rotation](IInspectable const&, SelectionChangedEventArgs const&)
         {
             auto params = MainWindow::Current()->Player().Params();
