@@ -131,15 +131,14 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             }
             m_currentTag = tag;
 
-            // 官方标准转场：EntranceNavigationTransitionInfo
-            //（Windows 设置页用的就是它，淡入 + 从底部上浮）。
-            // 不做首次/非首次区分——首次导航在 Activated 里由 DwmFlush 保证窗口已显示。
+            // 转场交给页面自身的 EntranceThemeTransition（见 DisplayPage/SettingsPage
+            // 的 animationRoot），这里用 Suppress 避免 Frame 与页面叠加动画。
             auto const pageType = (tag == L"settings")
                 ? xaml_typename<ScreenControl::SettingsPage>()
                 : xaml_typename<ScreenControl::DisplayPage>();
 
-            Microsoft::UI::Xaml::Media::Animation::EntranceNavigationTransitionInfo entrance;
-            m_contentFrame.Navigate(pageType, nullptr, entrance);
+            Microsoft::UI::Xaml::Media::Animation::SuppressNavigationTransitionInfo suppress;
+            m_contentFrame.Navigate(pageType, nullptr, suppress);
 
             // 关键：必须在 Navigate 之后清空。
             // Navigate 会把"上一个页面"压入 BackStack，先清再导航等于没清，

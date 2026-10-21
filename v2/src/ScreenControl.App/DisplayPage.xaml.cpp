@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "DisplayPage.xaml.h"
 #include "UiHelpers.h"
+#include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #include "PlaybackController.h"
 #if __has_include("DisplayPage.g.cpp")
 #include "DisplayPage.g.cpp"
@@ -259,7 +260,15 @@ namespace winrt::ScreenControl::implementation
         MainWindow::Current()->AttachPreview(m_previewSource, m_previewPlaceholder);
         MainWindow::Current()->AttachStatusText(m_statusText);
         MainWindow::Current()->AttachDeviceText(m_deviceText);
-        Content(MakeScrollable(page));
+
+        // 页面入场动画：从底部上浮淡入（EntranceThemeTransition）。
+        // 放在页面自己的根容器上，不依赖 Frame.Navigate 的转场时序，
+        // 冷启动与切页面都能稳定生效。
+        Grid animationRoot;
+        animationRoot.ChildrenTransitions().Append(
+            Microsoft::UI::Xaml::Media::Animation::EntranceThemeTransition{});
+        animationRoot.Children().Append(MakeScrollable(page));
+        Content(animationRoot);
     }
 
     void DisplayPage::OnNavigatedFrom(Microsoft::UI::Xaml::Navigation::NavigationEventArgs const&)

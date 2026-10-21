@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "SettingsPage.xaml.h"
 #include "UiHelpers.h"
+#include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #if __has_include("SettingsPage.g.cpp")
 #include "SettingsPage.g.cpp"
 #endif
@@ -255,6 +256,11 @@ namespace winrt::ScreenControl::implementation
         // 同一个 UIElement 被挂到两处 -> XAML 抛 E_INVALIDARG（"参数错误"）导致闪退。
         page.Children().Append(MakeSettingsCard(L"\xE7E8", L"智能关屏", powerMaster, powerItems));
 
-        Content(MakeScrollable(page));
+        // 页面入场动画：从底部上浮淡入（EntranceThemeTransition）。
+        Grid animationRoot;
+        animationRoot.ChildrenTransitions().Append(
+            Microsoft::UI::Xaml::Media::Animation::EntranceThemeTransition{});
+        animationRoot.Children().Append(MakeScrollable(page));
+        Content(animationRoot);
     }
 }
