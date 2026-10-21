@@ -91,6 +91,7 @@ namespace winrt::ScreenControl::implementation
         ::ScreenControl::TrayIcon m_trayIcon;
 
         bool m_trayAvailable = false;
+        bool m_firstNavigateDone = false;
         bool m_exiting = false;
         bool m_closePromptOpen = false;
     };

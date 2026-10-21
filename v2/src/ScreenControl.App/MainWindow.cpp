@@ -157,7 +157,20 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
         Title(L"ASUS AIO Screen Control");
 
         SetupBackdropAndTitleBar();
-        nav.SelectedItem(itemDisplay);
+
+        // 首次页面导航延后到窗口真正激活之后。
+        // 在构造函数里直接 nav.SelectedItem(...) 时窗口尚未显示，
+        // 页面转场会在"没有窗口"的状态下播放，实际看到的是系统窗口动画，
+        // 方向与预期相反（从右到左）。
+        Activated([this, nav, itemDisplay](auto&&, Microsoft::UI::Xaml::WindowActivatedEventArgs const&)
+        {
+            if (m_firstNavigateDone)
+            {
+                return;
+            }
+            m_firstNavigateDone = true;
+            nav.SelectedItem(itemDisplay);
+        });
 
         // 启动时按配置恢复主题（含「跟随系统」）。
         m_theme = ::ScreenControl::NativeTheme::Parse(::ScreenControl::Ui::Config().Data().appTheme);
@@ -244,7 +257,10 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
                 }
                 else if (action == L"exit")
                 {
-                    m_exiting = true;
+                    // 不放行系统关闭：直接关闭会走 DWM 的窗口关闭合成，闪白。
+                    // 统一走 ExitApplication（先隐藏、等一帧、再退出）。
+                    args.Cancel(true);
+                    ExitApplication();
                 }
                 else
                 {
