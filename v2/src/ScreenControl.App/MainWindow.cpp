@@ -24,6 +24,9 @@
 #include <fstream>
 #include <memory>
 
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Controls;
@@ -128,16 +131,26 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             }
             m_currentTag = tag;
 
-            // 显式指定"从下往上"的滑入动画（官方 SlideNavigationTransitionInfo）
+            // 首次导航（Frame 无内容）不播放转场：窗口正在出现，
+            // 叠加内容滑动会与窗口打开动画混淆、方向看起来不对。
+            // 之后的页面切换用官方 Slide(FromBottom)，即从下往上。
+            const bool firstNav = (m_contentFrame.Content() == nullptr);
+
             Microsoft::UI::Xaml::Media::Animation::SlideNavigationTransitionInfo slide;
             slide.Effect(Microsoft::UI::Xaml::Media::Animation::SlideNavigationTransitionEffect::FromBottom);
-            if (tag == L"settings")
+
+            auto const pageType = (tag == L"settings")
+                ? xaml_typename<ScreenControl::SettingsPage>()
+                : xaml_typename<ScreenControl::DisplayPage>();
+
+            if (firstNav)
             {
-                m_contentFrame.Navigate(xaml_typename<ScreenControl::SettingsPage>(), nullptr, slide);
+                m_contentFrame.Navigate(pageType, nullptr,
+                    Microsoft::UI::Xaml::Media::Animation::SuppressNavigationTransitionInfo{});
             }
             else
             {
-                m_contentFrame.Navigate(xaml_typename<ScreenControl::DisplayPage>(), nullptr, slide);
+                m_contentFrame.Navigate(pageType, nullptr, slide);
             }
 
             // 关键：必须在 Navigate 之后清空。
@@ -169,7 +182,21 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
                 return;
             }
             m_firstNavigateDone = true;
-            nav.SelectedItem(itemDisplay);
+
+            // 等窗口帧真正合成后再做首次导航，避免与窗口打开动画重叠
+            auto dispatcher = DispatcherQueue();
+            if (dispatcher)
+            {
+                dispatcher.TryEnqueue([nav, itemDisplay]()
+                {
+                    ::DwmFlush();
+                    nav.SelectedItem(itemDisplay);
+                });
+            }
+            else
+            {
+                nav.SelectedItem(itemDisplay);
+            }
         });
 
         // 启动时按配置恢复主题（含「跟随系统」）。
@@ -294,31 +321,28 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
     {
         PrepareWindowForHide();
 
-        // 关键：等一帧真正合成后再隐藏。
-        // DispatcherQueue.TryEnqueue 的回调仍可能早于合成，屏幕上是改底色之前的白帧；
-        // 这里用 80ms 定时器确保实色底已经上屏。
         auto appWindow = AppWindow();
         if (!appWindow)
         {
             return;
         }
 
+        // 用 DwmFlush 等待实色底真正合成上屏，再隐藏窗口。
+        // DwmFlush 阻塞到 DWM 完成当前帧合成，比定时器可靠。
         auto dispatcher = DispatcherQueue();
         if (dispatcher)
         {
-            auto timer = dispatcher.CreateTimer();
-            timer.Interval(std::chrono::milliseconds(80));
-            timer.IsRepeating(false);
-            timer.Tick([appWindow, timer](auto const&, auto const&) mutable
+            dispatcher.TryEnqueue([appWindow]()
             {
+                ::DwmFlush();
                 appWindow.Hide();
-                timer.Stop();
+                ::DwmFlush();
             });
-            timer.Start();
-            return;
         }
-
-        appWindow.Hide();
+        else
+        {
+            appWindow.Hide();
+        }
     }
     void MainWindow::ShowFromTray()
     {
@@ -414,13 +438,7 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
     {
         m_exiting = true;
 
-        // 先隐藏窗口：直接关闭会有一帧白底闪现
-        // 先准备实色底并隐藏窗口，避免关闭瞬间合成出白底
         PrepareWindowForHide();
-        if (auto appWindow = AppWindow())
-        {
-            appWindow.Hide();
-        }
         m_trayIcon.Remove();
 
         if (m_player)
@@ -435,22 +453,32 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
 
         m_powerMonitor.Stop();
 
-        // 等实色底上屏后再结束进程，避免 DWM 合成出一帧白底
-        auto exitDispatcher = DispatcherQueue();
-        if (exitDispatcher)
+        auto exitWindow = AppWindow();
+        auto doExit = [exitWindow]()
         {
-            auto exitTimer = exitDispatcher.CreateTimer();
-            exitTimer.Interval(std::chrono::milliseconds(80));
-            exitTimer.IsRepeating(false);
-            exitTimer.Tick([exitTimer](auto const&, auto const&) mutable
+            // DwmFlush 阻塞到 DWM 完成合成，确保实色底先上屏再隐藏退出。
+            ::DwmFlush();
+            if (exitWindow)
             {
-                exitTimer.Stop();
-                ::ExitProcess(0);
-            });
-            exitTimer.Start();
+                exitWindow.Hide();
+            }
+            ::DwmFlush();
+            ::ExitProcess(0);
+        };
+
+        auto dispatcher = DispatcherQueue();
+        if (dispatcher)
+        {
+            dispatcher.TryEnqueue(doExit);
             return;
         }
 
+        ::DwmFlush();
+        if (exitWindow)
+        {
+            exitWindow.Hide();
+        }
+        ::DwmFlush();
         ::ExitProcess(0);
     }
 
