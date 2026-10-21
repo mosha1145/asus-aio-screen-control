@@ -110,9 +110,9 @@ namespace winrt::ScreenControl::implementation
 
         ComboBox fitMode;
         fitMode.Header(box_value(L"图像适应"));
-        fitMode.Items().Append(box_value(L"适应 · contain"));
-        fitMode.Items().Append(box_value(L"填充 · cover"));
-        fitMode.Items().Append(box_value(L"拉伸 · stretch"));
+        fitMode.Items().Append(box_value(L"适应"));
+        fitMode.Items().Append(box_value(L"填充"));
+        fitMode.Items().Append(box_value(L"拉伸"));
         {
             const std::wstring stored = ::ScreenControl::Ui::Config().Data().fitMode;
             fitMode.SelectedIndex(stored == L"cover" ? 1 : (stored == L"stretch" ? 2 : 0));

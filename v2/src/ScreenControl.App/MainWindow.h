@@ -88,11 +88,8 @@ namespace winrt::ScreenControl::implementation
         ::ScreenControl::PowerMonitor m_powerMonitor;
         ::ScreenControl::TrayIcon m_trayIcon;
 
-        // 承载 WinUI 菜单的隐藏宿主窗口（托盘右键菜单在光标处弹出）
-        winrt::Microsoft::UI::Xaml::Window m_menuHost{ nullptr };
-        winrt::Microsoft::UI::Xaml::Controls::Border m_menuAnchor{ nullptr };
-
-        bool m_trayAvailable = false;`r`n        bool m_exiting = false;
+        bool m_trayAvailable = false;
+        bool m_exiting = false;
         bool m_closePromptOpen = false;
     };
 }

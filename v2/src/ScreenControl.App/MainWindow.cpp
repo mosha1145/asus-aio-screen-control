@@ -252,15 +252,23 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
             });
         }
 
-        m_trayAvailable = m_trayIcon.Add(L"ASUS AIO Screen Control",
-                       [this]() { ShowFromTray(); },
-                       [this]() { ShowTrayMenu(); },
-                       ::ScreenControl::SingleInstance::ActivateMessageId(),
-                       [this]() { ShowFromTray(); });
+        m_trayAvailable = m_trayIcon.Add(GetHwnd(), L"ASUS AIO Screen Control",
+                                         [this]() { ShowFromTray(); },
+                                         [this]() { ShowTrayMenu(); });
     }
 
     void MainWindow::HideToTray()
     {
+        // 闪白来源：窗口隐藏瞬间 Mica 停止绘制，而根容器是 Transparent，
+        // DWM 会露出默认白色底。先把根容器刷成主题底色再隐藏。
+        if (auto root = Content().try_as<Panel>())
+        {
+            const auto background = ::ScreenControl::NativeTheme::ResolveIsDark(m_theme)
+                ? Windows::UI::ColorHelper::FromArgb(0xFF, 0x20, 0x20, 0x20)
+                : Windows::UI::ColorHelper::FromArgb(0xFF, 0xF3, 0xF3, 0xF3);
+            root.Background(Media::SolidColorBrush{ background });
+        }
+
         if (auto appWindow = AppWindow())
         {
             appWindow.Hide();
@@ -269,19 +277,17 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
 
     void MainWindow::ShowFromTray()
     {
-        // 诊断：把每次唤醒的调用记录到 tray_debug.log
-        {
-            wchar_t modulePath[MAX_PATH]{};
-            ::GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
-            std::ofstream log(std::filesystem::path(modulePath).parent_path() / L"tray_debug.log",
-                              std::ios::app);
-            log << "ShowFromTray called" << std::endl;
-        }
-
         if (auto appWindow = AppWindow())
         {
             appWindow.Show();
         }
+
+        // 恢复 Mica 背衬：去掉隐藏前刷的实色底
+        if (auto root = Content().try_as<Panel>())
+        {
+            root.Background(nullptr);
+        }
+
         Activate();
         if (HWND hwnd = GetHwnd())
         {
@@ -385,89 +391,68 @@ static ::winrt::ScreenControl::implementation::MainWindow* s_current = nullptr;
 
     void MainWindow::ShowTrayMenu()
     {
-        // 用一个隐藏的 WinUI 窗口承载原生 MenuFlyout：
-        // 菜单外观、圆角、亚克力、动画全部来自 WinUI，不做任何自绘。
-        if (!m_menuHost)
+        // 托盘菜单用 Win32 HMENU（TrackPopupMenu）：
+        // 不依赖任何 WinUI 宿主窗口，行为与系统托盘菜单一致，也不会被遮挡。
+        enum Command : UINT
         {
-            m_menuHost = Window{};
-            m_menuHost.Title(L"");
-            if (auto hostWindow = m_menuHost.AppWindow())
-            {
-                hostWindow.IsShownInSwitchers(false);
-                if (auto presenter =
-                        hostWindow.Presenter().try_as<Microsoft::UI::Windowing::OverlappedPresenter>())
-                {
-                    presenter.SetBorderAndTitleBar(false, false);
-                    presenter.IsResizable(false);
-                    presenter.IsMaximizable(false);
-                    presenter.IsMinimizable(false);
-                }
-            }
+            CommandOpen = 1,
+            CommandTogglePlay,
+            CommandStop,
+            CommandExit,
+        };
 
-            m_menuAnchor = Border{};
-            m_menuAnchor.Width(1);
-            m_menuAnchor.Height(1);
-            m_menuHost.Content(m_menuAnchor);
+        HMENU menu = ::CreatePopupMenu();
+        if (menu == nullptr)
+        {
+            return;
         }
 
-        const POINT cursor = ::ScreenControl::TrayIcon::CursorPosition();
-        if (auto hostWindow = m_menuHost.AppWindow())
-        {
-            hostWindow.Move(Windows::Graphics::PointInt32{ cursor.x, cursor.y });
-            hostWindow.Resize(Windows::Graphics::SizeInt32{ 1, 1 });
-        }
-        m_menuHost.Activate();
-
-        MenuFlyout flyout;
-
-        MenuFlyoutItem openItem;
-        openItem.Text(L"打开");
-        openItem.Click([this](IInspectable const&, RoutedEventArgs const&) { ShowFromTray(); });
-        flyout.Items().Append(openItem);
-
-        flyout.Items().Append(MenuFlyoutSeparator{});
-
-        MenuFlyoutItem toggleItem;
         const bool paused = m_player && m_player->IsPaused();
-        toggleItem.Text(paused ? L"播放：继续" : L"播放：暂停");
-        toggleItem.Click([this](IInspectable const&, RoutedEventArgs const&)
+
+        ::AppendMenuW(menu, MF_STRING, CommandOpen, L"打开");
+        ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        ::AppendMenuW(menu, MF_STRING, CommandTogglePlay, paused ? L"播放：继续" : L"播放：暂停");
+        ::AppendMenuW(menu, MF_STRING, CommandStop, L"停止显示");
+        ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        ::AppendMenuW(menu, MF_STRING, CommandExit, L"退出");
+
+        POINT cursor = ::ScreenControl::TrayIcon::CursorPosition();
+        HWND hwnd = GetHwnd();
+
+        // 托盘菜单必须先把窗口前置，否则点击菜单外部时菜单不会消失
+        ::SetForegroundWindow(hwnd);
+
+        const UINT command = ::TrackPopupMenu(
+            menu,
+            TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN,
+            cursor.x, cursor.y, 0, hwnd, nullptr);
+
+        ::PostMessageW(hwnd, WM_NULL, 0, 0);
+        ::DestroyMenu(menu);
+
+        switch (command)
         {
+        case CommandOpen:
+            ShowFromTray();
+            break;
+        case CommandTogglePlay:
             if (m_player)
             {
                 m_player->SetPaused(!m_player->IsPaused());
             }
-        });
-        flyout.Items().Append(toggleItem);
-
-        MenuFlyoutItem stopItem;
-        stopItem.Text(L"停止显示");
-        stopItem.Click([this](IInspectable const&, RoutedEventArgs const&)
-        {
+            break;
+        case CommandStop:
             if (m_player)
             {
                 m_player->Stop();
             }
-        });
-        flyout.Items().Append(stopItem);
-
-        flyout.Items().Append(MenuFlyoutSeparator{});
-
-        MenuFlyoutItem exitItem;
-        exitItem.Text(L"退出");
-        exitItem.Click([this](IInspectable const&, RoutedEventArgs const&) { ExitApplication(); });
-        flyout.Items().Append(exitItem);
-
-        flyout.Closed([this](IInspectable const&, IInspectable const&)
-        {
-            if (m_menuHost)
-            {
-                m_menuHost.AppWindow().Hide();
-            }
-        });
-
-        Microsoft::UI::Xaml::Controls::Primitives::FlyoutShowOptions options;
-        options.Position(Windows::Foundation::Point{ 0.0f, 0.0f });
-        flyout.ShowAt(m_menuAnchor, options);
+            break;
+        case CommandExit:
+            ExitApplication();
+            break;
+        default:
+            break;
+        }
     }
     void MainWindow::SetupPowerEvents()
     {
